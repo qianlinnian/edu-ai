@@ -55,7 +55,41 @@
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 1.2 技术栈明细
+### 1.2 前端架构说明
+
+**只有一个前端项目**，通过不同路由提供两种访问模式：
+
+```
+前端项目（frontend/）
+│
+├── 完整模式（Web管理端）
+│   ├── 带侧边栏的后台管理系统
+│   ├── 9个页面（登录、仪表盘、课程、答疑、作业、批改、学情、练习、Agent构建器）
+│   ├── 教师和学生根据角色看到不同页面
+│   └── 访问地址：https://your-domain.com/
+│
+└── Widget模式（嵌入用）
+    ├── 只有一个小对话窗口，不带侧边栏
+    ├── 供超星/钉钉通过iframe嵌入
+    └── 访问地址：https://your-domain.com/widget/chat?course=1
+```
+
+架构图中的"超星嵌入H5"、"钉钉H5小程序"、"iframe Widget"本质都是同一个前端，
+只是通过iframe加载Widget路由。H5就是HTML5网页，不需要单独开发。
+
+超星/钉钉嵌入方式：
+```html
+<iframe src="https://your-domain.com/widget/chat?course=1&token=xxx"
+        width="400" height="600">
+</iframe>
+```
+
+> 赛题明确说明"不需要做具体的接口对接集成调试与验证"，
+> 所以只需实现Widget + 写技术说明文档即可，不需要真实对接超星/钉钉。
+
+详细页面设计见 [docs/frontend-design.md](frontend-design.md)
+
+### 1.3 技术栈明细
 
 | 层级 | 技术选型 | 说明 |
 |------|----------|------|
@@ -86,7 +120,7 @@
 | **部署** | Docker Compose | 一键编排 |
 | | Nginx | 反向代理 + 静态资源 |
 
-### 1.3 核心模块说明
+### 1.4 核心模块说明
 
 **Agent SDK（`agent_core/`）**
 - `AgentBase`：所有Agent基类，定义chat/grade/analyze/generate标准接口
