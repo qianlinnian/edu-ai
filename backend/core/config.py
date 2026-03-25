@@ -33,8 +33,12 @@ class Settings(BaseSettings):
     ZHIPU_API_KEY: str = ""
     ZHIPU_MODEL: str = "glm-4"
 
+    # LLM - DeepSeek
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_MODEL: str = "deepseek-chat"
+
     # LLM 默认提供者
-    DEFAULT_LLM_PROVIDER: str = "dashscope"  # dashscope | zhipu
+    DEFAULT_LLM_PROVIDER: str = "dashscope"  # dashscope | zhipu | deepseek
 
     # Celery
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"

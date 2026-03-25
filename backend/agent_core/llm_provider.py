@@ -105,6 +105,37 @@ class ZhipuProvider(BaseLLMProvider):
         return results
 
 
+class DeepSeekProvider(BaseLLMProvider):
+    """DeepSeek Provider（OpenAI兼容接口）"""
+
+    BASE_URL = "https://api.deepseek.com"
+
+    def __init__(self, model: str = None, api_key: str = None):
+        self.model = model or settings.DEEPSEEK_MODEL
+        self.api_key = api_key or settings.DEEPSEEK_API_KEY
+
+    def _get_client(self):
+        from openai import OpenAI
+        return OpenAI(api_key=self.api_key, base_url=self.BASE_URL)
+
+    async def chat(self, messages: list[dict], **kwargs) -> str:
+        client = self._get_client()
+        response = client.chat.completions.create(model=self.model, messages=messages, **kwargs)
+        return response.choices[0].message.content
+
+    async def chat_stream(self, messages: list[dict], **kwargs):
+        client = self._get_client()
+        response = client.chat.completions.create(model=self.model, messages=messages, stream=True, **kwargs)
+        for chunk in response:
+            if chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    async def embedding(self, texts: list[str]) -> list[list[float]]:
+        # DeepSeek暂无Embedding API，回退到DashScope
+        fallback = DashScopeProvider()
+        return await fallback.embedding(texts)
+
+
 def get_llm_provider(provider: str = None, model: str = None) -> BaseLLMProvider:
     """获取LLM Provider实例"""
     provider = provider or settings.DEFAULT_LLM_PROVIDER
@@ -112,5 +143,7 @@ def get_llm_provider(provider: str = None, model: str = None) -> BaseLLMProvider
         return DashScopeProvider(model=model)
     elif provider == "zhipu":
         return ZhipuProvider(model=model)
+    elif provider == "deepseek":
+        return DeepSeekProvider(model=model)
     else:
         raise ValueError(f"不支持的LLM Provider: {provider}")
