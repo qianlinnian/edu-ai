@@ -61,10 +61,12 @@ conda activate eduai
 cd backend
 
 # 安装依赖
-pip install -e ".[dev]"
+pip install -r requirements.txt
 
 # 数据库迁移（建表）
+set PYTHONPATH=%CD%
 alembic upgrade head
+
 
 # 启动后端
 uvicorn main:app --reload --port 8000
@@ -85,7 +87,7 @@ python -m venv .venv
 source .venv/bin/activate
 
 # 安装依赖
-pip install -e ".[dev]"
+pip install -r requirements.txt
 
 # 数据库迁移（建表）
 alembic upgrade head
@@ -180,3 +182,36 @@ cd frontend && npm run build
 ## 团队分工
 
 详见 [docs/plan.md](docs/plan.md)
+
+## 注意事项
+
+- 本机运行后端时，DATABASE_URL 应连接 localhost
+- 容器内运行后端时，DATABASE_URL 应连接 postgres
+- alembic 请在 backend/ 目录执行
+- 测试通义千问时请使用 DashScope API Key，而不是 DashVector API Key
+
+## 环境一致性建议
+
+为减少“我这里能跑、你那里不能跑”的情况，建议所有成员统一按下面方式初始化后端环境：
+
+```bash
+cd backend
+pip install -r requirements.txt
+set PYTHONPATH=%CD%
+alembic upgrade head
+python script/check_env.py
+```
+
+如果还需要验证大模型通信，可执行：
+
+```bash
+python script/check_env.py --check-llm
+```
+
+脚本会检查以下内容：
+
+- Python 版本是否满足要求
+- PostgreSQL / Redis / MinIO 端口是否可连接
+- FastAPI 健康检查接口是否正常
+- 数据库是否可连接且业务表是否存在
+- 可选：LLM API 是否能返回 `API OK`

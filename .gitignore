@@ -151,3 +151,4 @@ venv/
 .vscode/
 *.swp
 *.swo
+docs/plan-log.md
