@@ -112,7 +112,21 @@ npm run dev
 
 前端页面：http://localhost:5173
 
-### 7. 一键启动（部署/演示时使用）
+### 7. 一键启动（便于开发）
+```bash
+# Windows 环境变量设置脚本
+cd backend
+# 注意先启动 docker 服务
+docker compose up postgres redis minio -d # 启动基础服务 数据库、缓存、文件存储
+# 等待服务启动后执行 10s左右
+cd script
+dev.cmd
+# 新建终端执行
+migrate.cmd
+# 这会自动设置环境变量、运行数据库迁移、启动后端和前端
+```
+
+### 8. 启动（部署/演示时使用）
 
 部署或演示时，可以用 Docker 一次性启动所有服务（包括后端代码）：
 

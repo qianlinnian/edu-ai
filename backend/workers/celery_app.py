@@ -22,5 +22,9 @@ celery_app.conf.update(
     },
 )
 
-# 自动发现任务
+# 发现任务
 celery_app.autodiscover_tasks(["workers"])
+celery_app.conf.imports = (
+    "workers.grading_task",
+    "workers.embedding_task",
+)
