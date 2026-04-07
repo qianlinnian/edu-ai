@@ -6,6 +6,21 @@ from core.database import get_db
 from core.security import get_current_user
 from models.user import User
 from models.course import Course, KnowledgeUnit, CourseResource, Enrollment
+from minio import Minio
+from core.config import get_settings
+from workers.embedding_task import process_resource
+from uuid import uuid4
+from io import BytesIO
+
+settings = get_settings()
+
+def get_minio_client() -> Minio:
+    return Minio(
+        settings.MINIO_ENDPOINT,
+        access_key=settings.MINIO_ACCESS_KEY,
+        secret_key=settings.MINIO_SECRET_KEY,
+        secure=False,
+    )
 
 router = APIRouter()
 
@@ -109,16 +124,43 @@ async def upload_resource(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-):
-    # TODO: 上传到MinIO，触发文档解析异步任务
+): 
+
+    # 检查课程是否存在
+    course_result = await db.execute(select(Course).where(Course.id == course_id))
+    course = course_result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Invalid file")
+    object_name = f"courses/{course_id}/{uuid4()}_{file.filename}" # object_name 是文件在 MinIO 中的路径,加上 uuid4() 是为了避免文件名冲突
+    minio_client = get_minio_client() # 获取minio客户端
+    # 如果桶不存在则创建桶，然后上传文件到MinIO
+    if not minio_client.bucket_exists(settings.MINIO_BUCKET):
+        minio_client.make_bucket(settings.MINIO_BUCKET)
+
+    contents = await file.read() # 读取文件内容
+
+    minio_client.put_object(
+        settings.MINIO_BUCKET,
+        object_name,
+        BytesIO(contents),
+        length=len(contents),
+        content_type=file.content_type or "application/octet-stream",
+    )
+
     resource = CourseResource(
         course_id=course_id,
         name=file.filename,
         file_type=file.filename.split(".")[-1] if file.filename else "unknown",
-        file_path=f"courses/{course_id}/{file.filename}",
-        file_size=file.size or 0,
+        file_path = object_name,
+        file_size=len(contents),
     )
     db.add(resource)
     await db.flush()
-    await db.refresh(resource)
+    await db.refresh(resource) 
+    try:
+        process_resource.delay(resource.id)  # 触发异步任务处理资源
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process resource: {str(e)}")
     return {"id": resource.id, "name": resource.name, "message": "上传成功，正在处理中"}
