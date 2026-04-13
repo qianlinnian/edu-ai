@@ -1,4 +1,6 @@
 # 可嵌入式跨课程AI Agent通用架构平台 
+## Statue
+DEVELOPPING!!!
 ## 环境准备
 
 ### 1. 安装必备软件
@@ -175,7 +177,4 @@ cd backend && alembic revision --autogenerate -m "描述" && alembic upgrade hea
 # 前端构建生产版本
 cd frontend && npm run build
 ```
-
-## 团队分工
-
-详见 [docs/plan.md](docs/plan.md)
+ 
