@@ -1,7 +1,4 @@
-# EduAI - 可嵌入式跨课程AI Agent通用架构平台
-# EduAI - 可嵌入式跨课程AI Agent通用架构平台
-# EduAI - 可嵌入式跨课程AI Agent通用架构平台
-
+# 可嵌入式跨课程AI Agent通用架构平台 
 ## 环境准备
 
 ### 1. 安装必备软件
