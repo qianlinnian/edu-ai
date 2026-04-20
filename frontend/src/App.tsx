@@ -10,6 +10,7 @@ import Analytics from './pages/Analytics'
 import Exercises from './pages/Exercises'
 import AgentBuilder from './pages/AgentBuilder'
 import PlatformConfig from './pages/PlatformConfig'
+import Widget from './pages/Widget'
 import { useAuthStore } from './hooks/useAuthStore'
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/widget/chat" element={<Widget />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     )
@@ -38,6 +40,7 @@ function App() {
         <Route path="platform" element={<PlatformConfig />} />
       </Route>
       <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/widget/chat" element={<Widget />} />
     </Routes>
   )
 }
