@@ -30,6 +30,8 @@ class DashScopeProvider(BaseLLMProvider):
     def __init__(self, model: str = None, api_key: str = None):
         self.model = model or settings.QWEN_MODEL
         self.api_key = api_key or settings.DASHSCOPE_API_KEY
+        if not self.api_key:
+            raise ValueError("DashScope API Key未配置，请设置DASHSCOPE_API_KEY环境变量或在配置文件中指定")
 
     async def chat(self, messages: list[dict], **kwargs) -> str:
         import dashscope
@@ -42,7 +44,7 @@ class DashScopeProvider(BaseLLMProvider):
         )
         if response.status_code == 200:
             return response.output.choices[0].message.content
-        raise Exception(f"DashScope API error: {response.code} - {response.message}")
+        raise Exception(f"DashScope API error: function(chat), status_code: {response.status_code} - {response.message}")
 
     async def chat_stream(self, messages: list[dict], **kwargs):
         import dashscope
@@ -60,6 +62,10 @@ class DashScopeProvider(BaseLLMProvider):
                 content = response.output.choices[0].message.content
                 if content:
                     yield content
+                else:
+                    raise Exception(f"DashScope API error: function(chat_stream) - empty content in response")
+            else:
+                raise Exception(f"DashScope API error: function(chat_stream), status_code: {response.status_code} - {response.message}")
 
     async def embedding(self, texts: list[str]) -> list[list[float]]:
         import dashscope
@@ -70,7 +76,7 @@ class DashScopeProvider(BaseLLMProvider):
         )
         if response.status_code == 200:
             return [item["embedding"] for item in response.output["embeddings"]]
-        raise Exception(f"DashScope Embedding error: {response.code} - {response.message}")
+        raise Exception(f"DashScope Embedding error: function(embedding), status_code: {response.status_code} - {response.message}")
 
 
 class ZhipuProvider(BaseLLMProvider):
@@ -79,12 +85,16 @@ class ZhipuProvider(BaseLLMProvider):
     def __init__(self, model: str = None, api_key: str = None):
         self.model = model or settings.ZHIPU_MODEL
         self.api_key = api_key or settings.ZHIPU_API_KEY
+        if not self.api_key:
+            raise ValueError("智谱API Key未配置，请设置ZHIPU_API_KEY环境变量或在配置文件中指定")
 
     async def chat(self, messages: list[dict], **kwargs) -> str:
         from zhipuai import ZhipuAI
         client = ZhipuAI(api_key=self.api_key)
         response = client.chat.completions.create(model=self.model, messages=messages, **kwargs)
-        return response.choices[0].message.content
+        if response.status_code == 200:
+            return response.choices[0].message.content
+        raise Exception(f"智谱API error: function(chat), status_code: {response.status_code} - {response.message}")
 
     async def chat_stream(self, messages: list[dict], **kwargs):
         from zhipuai import ZhipuAI
@@ -94,7 +104,7 @@ class ZhipuProvider(BaseLLMProvider):
             content = chunk.choices[0].delta.content
             if content:
                 yield content
-
+        raise Exception(f"智谱API error: function(chat_stream), status_code: {response.status_code} - {response.message}")
     async def embedding(self, texts: list[str]) -> list[list[float]]:
         from zhipuai import ZhipuAI
         client = ZhipuAI(api_key=self.api_key)
@@ -113,6 +123,8 @@ class DeepSeekProvider(BaseLLMProvider):
     def __init__(self, model: str = None, api_key: str = None):
         self.model = model or settings.DEEPSEEK_MODEL
         self.api_key = api_key or settings.DEEPSEEK_API_KEY
+        if not self.api_key:
+            raise ValueError("DeepSeek API Key未配置，请设置DEEPSEEK_API_KEY环境变量或在配置文件中指定")
 
     def _get_client(self):
         from openai import OpenAI

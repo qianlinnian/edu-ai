@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
-from agent_core.llm_provider import get_llm_provider
+from agent_core.agent_base import AgentConfig,QAAgent
 from core.database import get_db
 from core.security import get_current_user
 from models.agent import AgentInstance
@@ -29,22 +29,19 @@ class ChatMessageResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-async def _build_llm_messages(session_id: int, db: AsyncSession, system_prompt: str | None) -> list[dict]:
+async def _build_history_messages(session_id: int, db: AsyncSession) -> list[dict]:
     result = await db.execute(
         select(ChatMessage)
         .where(ChatMessage.session_id == session_id)
         .order_by(ChatMessage.created_at, ChatMessage.id)
     )
-    history = result.scalars().all()
+    history = result.scalars().all() 
 
-    messages: list[dict] = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.extend({"role": item.role, "content": item.content} for item in history)
-    return messages
+    return [{"role": item.role, "content": item.content} for item in history]
 
 
 @router.post("/send")
+# api接口 负责接收用户消息 调用agent生成回答 并保存聊天记录
 async def send_message(
     data: ChatRequest,
     db: AsyncSession = Depends(get_db),
@@ -85,9 +82,22 @@ async def send_message(
     db.add(user_msg)
     await db.flush()
 
-    messages = await _build_llm_messages(session.id, db, agent.system_prompt)
-    llm = get_llm_provider(agent.llm_provider, agent.llm_model)
-    response = await llm.chat(messages)
+    history = await _build_history_messages(session.id, db)
+
+    agent_config = AgentConfig(
+        name=agent.name,
+        course_id=data.course_id,
+        system_prompt=agent.system_prompt,
+        llm_provider=agent.llm_provider,
+        llm_model=agent.llm_model,
+    )
+
+    qa_agent = QAAgent(agent_config) # 创建 QAAgent实例，传入agent_config配置。
+    response = await qa_agent.chat(
+        query=data.message,
+        history=history[:-1] if history else [],
+        context={"db": db},
+    )
 
     assistant_msg = ChatMessage(
         session_id=session.id,
