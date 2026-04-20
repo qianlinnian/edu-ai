@@ -9,7 +9,6 @@ from models.course import CourseResource, ResourceChunk
 from workers.celery_app import celery_app
 
 settings = get_settings()
-
 sync_engine = create_engine(settings.DATABASE_SYNC_URL)
 SyncSessionLocal = sessionmaker(bind=sync_engine)
 
@@ -29,8 +28,8 @@ def split_text(content: str, chunk_size: int = 500, overlap: int = 100) -> list[
         return []
 
     chunks: list[str] = []
-    start = 0
     step = max(chunk_size - overlap, 1)
+    start = 0
 
     while start < len(text):
         end = min(start + chunk_size, len(text))
@@ -54,7 +53,7 @@ def parse_resource_content(file_type: str, payload: bytes) -> str:
 
 @celery_app.task(name="workers.embedding_task.process_resource")
 def process_resource(resource_id: int):
-    """Process a stored resource into simple text chunks and mark it as processed."""
+    """处理课程资料并将其分块写入 resource_chunks。"""
     print(f"[Embedding] 开始处理资料 resource_id={resource_id}")
 
     with SyncSessionLocal() as db:
