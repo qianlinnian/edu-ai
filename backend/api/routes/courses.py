@@ -1,11 +1,14 @@
+from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from core.database import get_db
 from core.security import get_current_user
+from core.storage import upload_bytes
 from models.user import User
 from models.course import Course, KnowledgeUnit, CourseResource, Enrollment
+from workers.embedding_task import process_resource
 
 router = APIRouter()
 
@@ -110,15 +113,37 @@ async def upload_resource(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    # TODO: 上传到MinIO，触发文档解析异步任务
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名不能为空")
+
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="上传文件不能为空")
+
+    suffix = file.filename.split(".")[-1] if "." in file.filename else "unknown"
+    object_name = f"courses/{course_id}/{uuid4().hex}_{file.filename}"
+
+    try:
+        upload_bytes(
+            object_name=object_name,
+            data=payload,
+            content_type=file.content_type or "application/octet-stream",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"上传MinIO失败: {exc}") from exc
+
     resource = CourseResource(
         course_id=course_id,
         name=file.filename,
-        file_type=file.filename.split(".")[-1] if file.filename else "unknown",
-        file_path=f"courses/{course_id}/{file.filename}",
-        file_size=file.size or 0,
+        file_type=suffix.lower(),
+        file_path=object_name,
+        file_size=len(payload),
     )
     db.add(resource)
     await db.flush()
     await db.refresh(resource)
+
+    # 延迟1秒触发，减少事务提交与worker查询的竞态
+    process_resource.apply_async(args=[resource.id], countdown=1)
+
     return {"id": resource.id, "name": resource.name, "message": "上传成功，正在处理中"}
