@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from core.database import get_db
 from core.security import get_current_user
+from education.analytics_engine import refresh_learning_alerts
+from education.exercise_engine import create_attempt_and_update_mastery, generate_targeted_exercises
+from models.exercise import ExercisePool, ExerciseType, GeneratedExercise
 from models.user import User
-from models.exercise import ExercisePool, GeneratedExercise, ExerciseAttempt, ExerciseType
 
 router = APIRouter()
 
@@ -26,51 +29,69 @@ class ExerciseAttemptRequest(BaseModel):
 
 @router.post("/generate")
 async def generate_exercises(
-    data: ExerciseGenRequest, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
+    data: ExerciseGenRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    """根据薄弱知识点生成练习题"""
-    # TODO: 先从题库匹配，不足时调用LLM生成
-    # from education.exercise_generator import generate_targeted_exercises
-    # exercises = await generate_targeted_exercises(data)
-
-    # 临时模拟
+    """Generate targeted exercises by course and knowledge points."""
+    exercises = await generate_targeted_exercises(
+        db,
+        student_id=user.id,
+        course_id=data.course_id,
+        knowledge_point_ids=data.knowledge_point_ids,
+        exercise_type=data.exercise_type,
+        difficulty=data.difficulty,
+        count=data.count,
+    )
     return {
-        "message": f"已生成{data.count}道练习题",
-        "exercises": [
-            {
-                "id": i,
-                "type": data.exercise_type,
-                "question": f"[模拟] 关于知识点{data.knowledge_point_ids}的第{i+1}题",
-                "options": ["A. 选项1", "B. 选项2", "C. 选项3", "D. 选项4"] if data.exercise_type == ExerciseType.CHOICE else None,
-            }
-            for i in range(data.count)
-        ],
+        "message": f"Generated {len(exercises)} exercises",
+        "exercises": exercises,
     }
 
 
 @router.post("/attempt")
 async def submit_attempt(
-    data: ExerciseAttemptRequest, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
+    data: ExerciseAttemptRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    """提交练习作答"""
-    # TODO: 自动评判并更新掌握度
-    attempt = ExerciseAttempt(
-        student_id=user.id,
-        exercise_id=data.exercise_id,
-        generated_exercise_id=data.generated_exercise_id,
-        student_answer=data.student_answer,
-        is_correct=False,  # TODO: 自动判断
-        score=0.0,
-    )
-    db.add(attempt)
-    await db.flush()
-    await db.refresh(attempt)
-    return {"id": attempt.id, "is_correct": attempt.is_correct, "feedback": "评判模块开发中..."}
+    """Submit attempt, auto-grade it, and update mastery."""
+    try:
+        attempt = await create_attempt_and_update_mastery(
+            db,
+            student_id=user.id,
+            exercise_id=data.exercise_id,
+            generated_exercise_id=data.generated_exercise_id,
+            student_answer=data.student_answer,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Refresh weak-point alerts after each attempt.
+    if attempt.exercise_id:
+        exercise = (
+            await db.execute(select(ExercisePool).where(ExercisePool.id == attempt.exercise_id))
+        ).scalar_one_or_none()
+        if exercise:
+            await refresh_learning_alerts(db, course_id=exercise.course_id, student_id=user.id)
+    elif attempt.generated_exercise_id:
+        generated = (
+            await db.execute(select(GeneratedExercise).where(GeneratedExercise.id == attempt.generated_exercise_id))
+        ).scalar_one_or_none()
+        if generated:
+            await refresh_learning_alerts(db, course_id=generated.course_id, student_id=user.id)
+
+    return {
+        "id": attempt.id,
+        "is_correct": attempt.is_correct,
+        "score": attempt.score,
+        "feedback": attempt.feedback,
+    }
 
 
 @router.get("/pool")
 async def list_exercise_pool(course_id: int, db: AsyncSession = Depends(get_db)):
-    """获取课程题库"""
+    """List course exercise pool."""
     result = await db.execute(
         select(ExercisePool).where(ExercisePool.course_id == course_id).order_by(ExercisePool.created_at.desc())
     )
