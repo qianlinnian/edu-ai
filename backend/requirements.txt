@@ -20,6 +20,7 @@ zhipuai==2.1.5.20250825
 openai==1.109.1
 python-docx==1.1.2
 PyPDF2==3.0.1
+pypdfium2==4.30.0
 python-pptx==1.0.2
 tiktoken==0.11.0
 minio==7.2.18
