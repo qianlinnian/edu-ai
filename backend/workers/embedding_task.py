@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from io import BytesIO
+
 from minio import Minio
+from docx import Document
+from PyPDF2 import PdfReader
+from pptx import Presentation
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 
@@ -47,6 +52,27 @@ def parse_resource_content(file_type: str, payload: bytes) -> str:
     suffix = file_type.lower()
     if suffix in {"txt", "md", "py", "json", "csv"}:
         return payload.decode("utf-8", errors="ignore")
+
+    if suffix == "pdf":
+        reader = PdfReader(BytesIO(payload))
+        texts = [(page.extract_text() or "").strip() for page in reader.pages]
+        return "\n".join(text for text in texts if text)
+
+    if suffix == "docx":
+        document = Document(BytesIO(payload))
+        texts = [paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()]
+        return "\n".join(texts)
+
+    if suffix == "pptx":
+        presentation = Presentation(BytesIO(payload))
+        texts: list[str] = []
+        for slide in presentation.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text:
+                    text = shape.text.strip()
+                    if text:
+                        texts.append(text)
+        return "\n".join(texts)
 
     return payload.decode("utf-8", errors="ignore")
 
