@@ -155,6 +155,7 @@ async def upload_resource(
         file_type=file.filename.split(".")[-1] if file.filename else "unknown",
         file_path = object_name,
         file_size=len(contents),
+        processing_status="pending",
     )
     db.add(resource)
     await db.flush()
@@ -162,5 +163,8 @@ async def upload_resource(
     try:
         process_resource.delay(resource.id)  # 触发异步任务处理资源
     except Exception as e:
+        resource.processing_status = "failed"
+        resource.processing_error = f"task dispatch failed: {str(e)}"
+        await db.commit()
         raise HTTPException(status_code=500, detail=f"Failed to process resource: {str(e)}")
     return {"id": resource.id, "name": resource.name, "message": "上传成功，正在处理中"}

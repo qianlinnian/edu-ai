@@ -64,6 +64,8 @@ class CourseResource(Base):
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     is_processed: Mapped[bool] = mapped_column(default=False)
+    processing_status: Mapped[str] = mapped_column(String(20), default="pending")
+    processing_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import base64
+import re
 from io import BytesIO
-from xml.etree import ElementTree as ET
-from zipfile import ZipFile
 
 import dashscope
 from minio import Minio
 from docx import Document
+from openpyxl import load_workbook
 from PyPDF2 import PdfReader
 from pptx import Presentation
 from sqlalchemy import create_engine, delete, select
@@ -33,22 +33,35 @@ def get_minio_client() -> Minio:
 
 
 def split_text(content: str, chunk_size: int = 500, overlap: int = 100) -> list[str]:
-    text = content.strip()
+    text = normalize_text(content)
     if not text:
         return []
 
-    chunks: list[str] = []
-    step = max(chunk_size - overlap, 1)
-    start = 0
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n+", text) if part.strip()]
+    if not paragraphs:
+        paragraphs = [text]
 
-    while start < len(text):
-        end = min(start + chunk_size, len(text))
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
-        if end >= len(text):
-            break
-        start += step
+    chunks: list[str] = []
+    current = ""
+
+    for paragraph in paragraphs:
+        if len(paragraph) > chunk_size:
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.extend(split_large_block(paragraph, chunk_size, overlap))
+            continue
+
+        candidate = f"{current}\n\n{paragraph}".strip() if current else paragraph
+        if len(candidate) <= chunk_size:
+            current = candidate
+        else:
+            if current:
+                chunks.append(current)
+            current = paragraph
+
+    if current:
+        chunks.append(current)
 
     return chunks
 
@@ -62,20 +75,10 @@ def parse_resource_content(file_type: str, payload: bytes) -> str:
         return parse_pdf_content(payload)
 
     if suffix == "docx":
-        document = Document(BytesIO(payload))
-        texts = [paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()]
-        return "\n".join(texts)
+        return parse_docx_content(payload)
 
     if suffix == "pptx":
-        presentation = Presentation(BytesIO(payload))
-        texts: list[str] = []
-        for slide in presentation.slides:
-            for shape in slide.shapes:
-                if hasattr(shape, "text") and shape.text:
-                    text = shape.text.strip()
-                    if text:
-                        texts.append(text)
-        return "\n".join(texts)
+        return parse_pptx_content(payload)
 
     if suffix == "xlsx":
         return parse_xlsx_content(payload)
@@ -84,52 +87,51 @@ def parse_resource_content(file_type: str, payload: bytes) -> str:
 
 
 def parse_xlsx_content(payload: bytes) -> str:
-    namespace = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    workbook = load_workbook(BytesIO(payload), data_only=True)
     texts: list[str] = []
 
-    with ZipFile(BytesIO(payload)) as workbook_zip:
-        shared_strings: list[str] = []
-        if "xl/sharedStrings.xml" in workbook_zip.namelist():
-            shared_root = ET.fromstring(workbook_zip.read("xl/sharedStrings.xml"))
-            for item in shared_root.findall("main:si", namespace):
-                parts = [node.text or "" for node in item.findall(".//main:t", namespace)]
-                shared_strings.append("".join(parts).strip())
-
-        sheet_files = sorted(
-            name
-            for name in workbook_zip.namelist()
-            if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")
-        )
-
-        for sheet_name in sheet_files:
-            sheet_root = ET.fromstring(workbook_zip.read(sheet_name))
+    try:
+        for worksheet in workbook.worksheets:
             rows: list[str] = []
-            for row in sheet_root.findall(".//main:sheetData/main:row", namespace):
-                values: list[str] = []
-                for cell in row.findall("main:c", namespace):
-                    cell_type = cell.attrib.get("t")
-                    value_node = cell.find("main:v", namespace)
-                    inline_node = cell.find("main:is", namespace)
-
-                    if cell_type == "s" and value_node is not None and value_node.text is not None:
-                        index = int(value_node.text)
-                        value = shared_strings[index] if index < len(shared_strings) else ""
-                    elif inline_node is not None:
-                        parts = [node.text or "" for node in inline_node.findall(".//main:t", namespace)]
-                        value = "".join(parts).strip()
-                    elif value_node is not None and value_node.text is not None:
-                        value = value_node.text.strip()
-                    else:
-                        value = ""
-
-                    if value:
-                        values.append(value)
-
+            for row in worksheet.iter_rows(values_only=True):
+                values = [str(value).strip() for value in row if value not in (None, "")]
                 if values:
                     rows.append(" | ".join(values))
 
             if rows:
-                texts.append(f"[{sheet_name.split('/')[-1]}]\n" + "\n".join(rows))
+                texts.append(f"[{worksheet.title}]\n" + "\n".join(rows))
+    finally:
+        workbook.close()
+
+    return "\n\n".join(texts)
+
+
+def parse_docx_content(payload: bytes) -> str:
+    document = Document(BytesIO(payload))
+    texts: list[str] = []
+
+    texts.extend(paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip())
+
+    for table in document.tables:
+        for row in table.rows:
+            values = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if values:
+                texts.append(" | ".join(values))
+
+    return "\n\n".join(texts)
+
+
+def parse_pptx_content(payload: bytes) -> str:
+    presentation = Presentation(BytesIO(payload))
+    texts: list[str] = []
+
+    for slide_index, slide in enumerate(presentation.slides, start=1):
+        slide_texts: list[str] = []
+        for shape in slide.shapes:
+            slide_texts.extend(extract_shape_text(shape))
+
+        if slide_texts:
+            texts.append(f"[Slide {slide_index}]\n" + "\n".join(slide_texts))
 
     return "\n\n".join(texts)
 
@@ -138,7 +140,7 @@ def parse_pdf_content(payload: bytes) -> str:
     reader = PdfReader(BytesIO(payload))
     texts = [(page.extract_text() or "").strip() for page in reader.pages]
     extracted_text = "\n".join(text for text in texts if text)
-    if extracted_text:
+    if is_meaningful_text(extracted_text):
         return extracted_text
 
     return ocr_pdf_content(payload)
@@ -153,38 +155,53 @@ def ocr_pdf_content(payload: bytes) -> str:
     texts: list[str] = []
 
     try:
-        page_count = min(len(pdf), 5)
+        page_total = len(pdf)
+        max_pages = settings.PDF_OCR_MAX_PAGES
+        page_count = page_total if max_pages <= 0 else min(page_total, max_pages)
+
         for page_index in range(page_count):
-            page = pdf[page_index]
-            pil_image = page.render(scale=2).to_pil()
-            buffer = BytesIO()
-            pil_image.save(buffer, format="PNG")
-            image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+            try:
+                page = pdf[page_index]
+                pil_image = page.render(scale=2).to_pil()
+                buffer = BytesIO()
+                pil_image.save(buffer, format="PNG")
+                image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
-            response = dashscope.MultiModalConversation.call(
-                model=settings.QWEN_VL_MODEL,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"image": f"data:image/png;base64,{image_base64}"},
-                            {"text": "请提取这页中的文字内容，直接返回纯文本，不要解释。"},
-                        ],
-                    }
-                ],
-            )
-
-            if response.status_code != 200:
+                response = dashscope.MultiModalConversation.call(
+                    model=settings.QWEN_VL_MODEL,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"image": f"data:image/png;base64,{image_base64}"},
+                                {"text": "请提取这页中的文字内容，直接返回纯文本，不要解释。"},
+                            ],
+                        }
+                    ],
+                )
+            except Exception as exc:
+                print(f"[Embedding][OCR] page={page_index + 1} failed before response: {exc}")
                 continue
 
-            content = response.output.choices[0].message.content
-            page_text_parts: list[str] = []
-            if isinstance(content, list):
-                for item in content:
-                    if isinstance(item, dict) and item.get("text"):
-                        page_text_parts.append(item["text"].strip())
-            elif isinstance(content, str):
-                page_text_parts.append(content.strip())
+            if response.status_code != 200:
+                print(
+                    f"[Embedding][OCR] page={page_index + 1} request failed: "
+                    f"{getattr(response, 'code', None)} {getattr(response, 'message', None)}"
+                )
+                continue
+
+            try:
+                content = response.output.choices[0].message.content
+                page_text_parts: list[str] = []
+                if isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict) and item.get("text"):
+                            page_text_parts.append(item["text"].strip())
+                elif isinstance(content, str):
+                    page_text_parts.append(content.strip())
+            except Exception as exc:
+                print(f"[Embedding][OCR] page={page_index + 1} response parse failed: {exc}")
+                continue
 
             page_text = "\n".join(part for part in page_text_parts if part)
             if page_text:
@@ -207,36 +224,106 @@ def process_resource(resource_id: int):
         if not resource:
             return {"resource_id": resource_id, "status": "not_found"}
 
-        client = get_minio_client()
-        response = client.get_object(settings.MINIO_BUCKET, resource.file_path)
         try:
-            payload = response.read()
-        finally:
-            response.close()
-            response.release_conn()
+            resource.processing_status = "processing"
+            resource.processing_error = None
+            resource.is_processed = False
+            db.commit()
 
-        content = parse_resource_content(resource.file_type, payload)
-        chunks = split_text(content)
+            client = get_minio_client()
+            response = client.get_object(settings.MINIO_BUCKET, resource.file_path)
+            try:
+                payload = response.read()
+            finally:
+                response.close()
+                response.release_conn()
 
-        db.execute(delete(ResourceChunk).where(ResourceChunk.resource_id == resource.id))
+            content = parse_resource_content(resource.file_type, payload)
+            chunks = split_text(content)
 
-        for index, chunk in enumerate(chunks):
-            db.add(
-                ResourceChunk(
-                    resource_id=resource.id,
-                    course_id=resource.course_id,
-                    content=chunk,
-                    chunk_index=index,
-                    metadata_={
-                        "resource_name": resource.name,
-                        "file_type": resource.file_type,
-                        "object_name": resource.file_path,
-                    },
+            db.execute(delete(ResourceChunk).where(ResourceChunk.resource_id == resource.id))
+
+            for index, chunk in enumerate(chunks):
+                db.add(
+                    ResourceChunk(
+                        resource_id=resource.id,
+                        course_id=resource.course_id,
+                        content=chunk,
+                        chunk_index=index,
+                        metadata_={
+                            "resource_name": resource.name,
+                            "file_type": resource.file_type,
+                            "object_name": resource.file_path,
+                        },
+                    )
                 )
-            )
 
-        resource.chunk_count = len(chunks)
-        resource.is_processed = True
-        db.commit()
+            resource.chunk_count = len(chunks)
+            resource.is_processed = True
+            resource.processing_status = "processed"
+            resource.processing_error = None
+            db.commit()
+            return {"resource_id": resource_id, "status": "processed", "chunk_count": len(chunks)}
+        except Exception as exc:
+            db.rollback()
+            resource = db.execute(
+                select(CourseResource).where(CourseResource.id == resource_id)
+            ).scalar_one_or_none()
+            if resource:
+                resource.chunk_count = 0
+                resource.is_processed = False
+                resource.processing_status = "failed"
+                resource.processing_error = str(exc)
+                db.commit()
 
-    return {"resource_id": resource_id, "status": "processed", "chunk_count": len(chunks)}
+            print(f"[Embedding] 处理失败 resource_id={resource_id}: {exc}")
+            return {"resource_id": resource_id, "status": "failed", "error": str(exc)}
+
+
+def normalize_text(content: str) -> str:
+    normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"[ \t]+\n", "\n", normalized)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    return normalized.strip()
+
+
+def split_large_block(text: str, chunk_size: int, overlap: int) -> list[str]:
+    chunks: list[str] = []
+    step = max(chunk_size - overlap, 1)
+    start = 0
+
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= len(text):
+            break
+        start += step
+
+    return chunks
+
+
+def is_meaningful_text(text: str) -> bool:
+    normalized = normalize_text(text)
+    if len(normalized) < settings.PDF_TEXT_MIN_LENGTH:
+        return False
+
+    meaningful_chars = sum(char.isalnum() or "\u4e00" <= char <= "\u9fff" for char in normalized)
+    ratio = meaningful_chars / max(len(normalized), 1)
+    return ratio >= settings.PDF_TEXT_MIN_MEANINGFUL_RATIO
+
+
+def extract_shape_text(shape) -> list[str]:
+    texts: list[str] = []
+
+    if hasattr(shape, "text") and shape.text:
+        text = shape.text.strip()
+        if text:
+            texts.append(text)
+
+    if hasattr(shape, "shapes"):
+        for child in shape.shapes:
+            texts.extend(extract_shape_text(child))
+
+    return texts
