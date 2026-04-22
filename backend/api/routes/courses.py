@@ -1,13 +1,15 @@
 from uuid import uuid4
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from core.database import get_db
 from core.security import get_current_user
 from core.storage import upload_bytes
+from models.course import Course, CourseResource, Enrollment, KnowledgeUnit
 from models.user import User
-from models.course import Course, KnowledgeUnit, CourseResource, Enrollment
 from workers.embedding_task import process_resource
 
 router = APIRouter()
@@ -113,12 +115,17 @@ async def upload_resource(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    course_result = await db.execute(select(Course).where(Course.id == course_id))
+    course = course_result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
     if not file.filename:
-        raise HTTPException(status_code=400, detail="文件名不能为空")
+        raise HTTPException(status_code=400, detail="Invalid file")
 
     payload = await file.read()
     if not payload:
-        raise HTTPException(status_code=400, detail="上传文件不能为空")
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     suffix = file.filename.split(".")[-1] if "." in file.filename else "unknown"
     object_name = f"courses/{course_id}/{uuid4().hex}_{file.filename}"
@@ -130,7 +137,7 @@ async def upload_resource(
             content_type=file.content_type or "application/octet-stream",
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"上传MinIO失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Failed to upload resource: {exc}") from exc
 
     resource = CourseResource(
         course_id=course_id,
@@ -138,12 +145,18 @@ async def upload_resource(
         file_type=suffix.lower(),
         file_path=object_name,
         file_size=len(payload),
+        processing_status="pending",
     )
     db.add(resource)
     await db.flush()
     await db.refresh(resource)
 
-    # 延迟1秒触发，减少事务提交与worker查询的竞态
-    process_resource.apply_async(args=[resource.id], countdown=1)
+    try:
+        process_resource.apply_async(args=[resource.id], countdown=1)
+    except Exception as exc:
+        resource.processing_status = "failed"
+        resource.processing_error = f"task dispatch failed: {exc}"
+        await db.commit()
+        raise HTTPException(status_code=500, detail=f"Failed to process resource: {exc}") from exc
 
     return {"id": resource.id, "name": resource.name, "message": "上传成功，正在处理中"}

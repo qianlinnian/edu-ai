@@ -62,10 +62,12 @@ conda activate eduai
 cd backend
 
 # 安装依赖
-pip install -e ".[dev]"
+pip install -r requirements.txt
 
 # 数据库迁移（建表）
+set PYTHONPATH=%CD%
 alembic upgrade head
+
 
 # 启动后端
 uvicorn main:app --reload --port 8000
@@ -86,7 +88,7 @@ python -m venv .venv
 source .venv/bin/activate
 
 # 安装依赖
-pip install -e ".[dev]"
+pip install -r requirements.txt
 
 # 数据库迁移（建表）
 alembic upgrade head
@@ -111,7 +113,21 @@ npm run dev
 
 前端页面：http://localhost:5173
 
-### 7. 一键启动（部署/演示时使用）
+### 7. 一键启动（便于开发）
+```bash
+# Windows 环境变量设置脚本
+cd backend
+# 注意先启动 docker 服务
+docker compose up postgres redis minio -d # 启动基础服务 数据库、缓存、文件存储
+# 等待服务启动后执行 10s左右
+cd script
+dev.cmd
+# 新建终端执行
+migrate.cmd
+# 这会自动设置环境变量、运行数据库迁移、启动后端和前端
+```
+
+### 8. 启动（部署/演示时使用）
 
 部署或演示时，可以用 Docker 一次性启动所有服务（包括后端代码）：
 
@@ -177,4 +193,39 @@ cd backend && alembic revision --autogenerate -m "描述" && alembic upgrade hea
 # 前端构建生产版本
 cd frontend && npm run build
 ```
- 
+## 团队分工
+
+详见 [docs/plan-log.md](docs/plan-log.md)
+
+## 注意事项
+
+- 本机运行后端时，DATABASE_URL 应连接 localhost
+- 容器内运行后端时，DATABASE_URL 应连接 postgres
+- alembic 请在 backend/ 目录执行
+- 测试通义千问时请使用 DashScope API Key，而不是 DashVector API Key
+
+## 环境一致性建议
+
+为减少“我这里能跑、你那里不能跑”的情况，建议所有成员统一按下面方式初始化后端环境：
+
+```bash
+cd backend
+pip install -r requirements.txt
+set PYTHONPATH=%CD%
+alembic upgrade head
+python script/check_env.py
+```
+
+如果还需要验证大模型通信，可执行：
+
+```bash
+python script/check_env.py --check-llm
+```
+
+脚本会检查以下内容：
+
+- Python 版本是否满足要求
+- PostgreSQL / Redis / MinIO 端口是否可连接
+- FastAPI 健康检查接口是否正常
+- 数据库是否可连接且业务表是否存在
+- 可选：LLM API 是否能返回 `API OK`
