@@ -1,4 +1,5 @@
 from uuid import uuid4
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -54,6 +55,21 @@ class KnowledgeUnitResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CourseResourceResponse(BaseModel):
+    id: int
+    course_id: int
+    name: str
+    file_type: str
+    file_size: int
+    chunk_count: int
+    is_processed: bool
+    processing_status: str
+    processing_error: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 @router.post("", response_model=CourseResponse)
 async def create_course(data: CourseCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     course = Course(**data.model_dump(), teacher_id=user.id)
@@ -104,6 +120,25 @@ async def create_knowledge_unit(
 async def list_knowledge_units(course_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(KnowledgeUnit).where(KnowledgeUnit.course_id == course_id).order_by(KnowledgeUnit.order_index)
+    )
+    return result.scalars().all()
+
+
+@router.get("/{course_id}/resources", response_model=list[CourseResourceResponse])
+async def list_resources(
+    course_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    course_result = await db.execute(select(Course).where(Course.id == course_id))
+    course = course_result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    result = await db.execute(
+        select(CourseResource)
+        .where(CourseResource.course_id == course_id)
+        .order_by(CourseResource.created_at.desc())
     )
     return result.scalars().all()
 
