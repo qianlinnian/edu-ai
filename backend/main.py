@@ -10,10 +10,10 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动时初始化
-    print(f"🚀 {settings.APP_NAME} 启动中...")
+    print(f"{settings.APP_NAME} 启动中...")
     yield
     # 关闭时清理
-    print(f"👋 {settings.APP_NAME} 关闭中...")
+    print(f"{settings.APP_NAME} 关闭中...")
 
 
 app = FastAPI(
