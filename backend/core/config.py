@@ -23,15 +23,17 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str = "minioadmin"
     MINIO_BUCKET: str = "eduai"
 
+    # 文件处理
+    EMBEDDING_BATCH_SIZE: int = 10
+    PDF_OCR_MAX_PAGES: int = 5
+    PDF_TEXT_MIN_LENGTH: int = 120
+    PDF_TEXT_MIN_MEANINGFUL_RATIO: float = 0.3
+
     # LLM - 通义千问
     DASHSCOPE_API_KEY: str = ""
     QWEN_MODEL: str = "qwen-max"
     QWEN_VL_MODEL: str = "qwen-vl-max"
     QWEN_EMBEDDING_MODEL: str = "text-embedding-v3"
-    EMBEDDING_BATCH_SIZE: int = 20
-    PDF_OCR_MAX_PAGES: int = 5
-    PDF_TEXT_MIN_LENGTH: int = 120
-    PDF_TEXT_MIN_MEANINGFUL_RATIO: float = 0.3
 
     # LLM - 智谱
     ZHIPU_API_KEY: str = ""

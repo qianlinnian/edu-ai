@@ -185,7 +185,7 @@ export default function Exercises() {
                   }}
                 >
                   <Radio value={opt.key} />
-                  <span style={{ flex: 1 }}><strong>{opt.key}.</strong> {opt.label}</span>
+                  <span style={{ flex: 1, color: '#1f1f1f' }}><strong>{opt.key}.</strong> {opt.label}</span>
                   {submitted && opt.key === q.answer && <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />}
                   {submitted && opt.key === selected && opt.key !== q.answer && <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 18 }} />}
                 </div>

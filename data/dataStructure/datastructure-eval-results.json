@@ -1,0 +1,269 @@
+{
+  "course_id": 2,
+  "checklist_path": "D:\\course\\SEME\\edu-ai\\data\\dataStructure\\datastructure-checklist.md",
+  "total_questions": 25,
+  "correct": 24,
+  "accuracy": 0.96,
+  "retrieval_nonempty": 25,
+  "wrong_questions": [
+    {
+      "index": 1,
+      "question": "在长度为 n 的顺序表中，在第 i 个位置插入一个元素，平均需要移动元素个数为：",
+      "expected": "B",
+      "actual": "D",
+      "response": "资料未明确提供直接的答案。根据插入排序的性质，通常在第 i 个位置插入一个元素时，需要将从位置 i 到 n-1 的所有元素向后移动一位，因此平均需要移动的元素个数为 (n-i)。\n\nANSWER: D\nREASON: 在第 i 个位置插入一个元素时，需要将从位置 i 到 n-1 的所有元素向后移动一位，因此平均需要移动的元素个数为 (n-i)。"
+    }
+  ],
+  "results": [
+    {
+      "index": 1,
+      "question": "在长度为 n 的顺序表中，在第 i 个位置插入一个元素，平均需要移动元素个数为：",
+      "expected": "B",
+      "actual": "D",
+      "correct": false,
+      "retrieved_count": 5,
+      "top_chunk_preview": "象个数。列的初始排列无关，仅依赖于对象个数。 在在\n插入第插入第 i i 个对象时，需要经过个对象时，需要经过 ⎣⎣loglog22ii⎦⎦+1  +1  次关次关\n键码比较，才能确定它应插入的位置。键码比较，才能确定它应插入的位置。 因因",
+      "response": "资料未明确提供直接的答案。根据插入排序的性质，通常在第 i 个位置插入一个元素时，需要将从位置 i 到 n-1 的所有元素向后移动一位，因此平均需要移动的元素个数为 (n-i)。\n\nANSWER: D\nREASON: 在第 i 个位置插入一个元素时，需要将从位置 i 到 n-1 的所有元素向后移动一位，因此平均需要移动的元素个数为 (n-i)。"
+    },
+    {
+      "index": 2,
+      "question": "单链表中删除某节点 p 的前驱节点，已知 p 指针，时间复杂度为：",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "( p→link ==NULL ) last= newnode;\np→link = newnode ;\nq= p→link;\np→link = q→ link;\ndelete q ;\nif ( p→link == NULL )last = ",
+      "response": "ANSWER: C\nREASON: 从给定的资料中没有直接提供删除前驱节点的具体步骤，但根据单链表特性，找到 p 的前驱需要遍历链表。"
+    },
+    {
+      "index": 3,
+      "question": "双链表相比单链表的主要优势是：",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "break;\ncase ‘>’: // pa指数小于 pb指数\npc→link = pa ; pc = pa ;\npa = Aiter.Next ( );\n}\nif ( Aiter.NotNull ( ) ) pc→link = pa;\ne",
+      "response": "ANSWER: C\nREASON: 双向链表是指在前驱和后继方向都能游历的线性链表。"
+    },
+    {
+      "index": 4,
+      "question": "循环队列中，判断队满的条件是：",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "{front = rear = 0; }队列的数组表示队列的数组表示\n⎯⎯循环队列的类定义循环队列的类定义\nintIsEmpty ( )const\n{ return front == rear ;}\nintIsFull ( )const\n{",
+      "response": "ANSWER: C\nREASON: 队满条件是 (rear + 1) % maxSize == front。"
+    },
+    {
+      "index": 5,
+      "question": "用栈实现递归的本质是：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "((递归树的深度递归树的深度 ))与递归工作与递归工作\n栈的关系栈的关系\n¾¾单向递归与尾递归的迭代实现单向递归与尾递归的迭代实现\n广义表广义表\n广义表定义广义表定义\n广义表长度、深度、表头、表尾广义表长度、深度、表头、表尾\n",
+      "response": "ANSWER: B\nREASON: 递归过程在实现时，每一次调用需要为过程中使用的参数、局部变量等另外分配存储空间，这与函数调用栈的机制一致。"
+    },
+    {
+      "index": 6,
+      "question": "表达式求值中，中缀转后缀主要利用：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "+ 3 * 11 + 2 * 36 + 4 * 43 * 10 + 3 * 11 + 2 * 36 + 4 * 4\n= 257= 257\n【【例例55】】下面是对二叉树进行中序遍历的下面是对二叉树进行中序遍历的\n递归算法。递归算法。\ntem",
+      "response": "ANSWER: B\nREASON: 栈的应用包括中缀表达式向后缀表达式转换。"
+    },
+    {
+      "index": 7,
+      "question": "递归算法必须具备：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "归的算法，其递归树如\n图所示。图所示。\n算法算法 partitionpartition利用序列第一个对象作为基准，利用序列第一个对象作为基准，\n将整个序列划分为左右两个子序列。算法中执将整个序列划分为左右两个子序列。算法中执\n行了一个循",
+      "response": "ANSWER: B\nREASON: 递归算法需要有终止条件以防止无限递归。"
+    },
+    {
+      "index": 8,
+      "question": "广义表 (a,(b,c)) 的深度为：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "BB((aa, , bb), ), CC((uu, (, (xx, , yy, , zz)), )), AA( ) ) )( ) ) )\nintGenList :: depth ( GenListNode *ls ) {\nif (ls→tl",
+      "response": "ANSWER: B\nREASON: 根据资料5中的递归算法分析，广义表 (a, (b, c)) 的深度为 1 + Max{Depth(a), Depth((b, c))} = 2。"
+    },
+    {
+      "index": 9,
+      "question": "一棵有 n 个节点的二叉树，其空指针域个数为：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "，132132，，213213，，231231，，321321。。\n有有00个个, 1, 1个个, 2, 2个个, 3, 3个结点的不同二叉树如下个结点的不同二叉树如下\n例如，具有例如，具有 44个结点的不同二叉树个结点的不同二叉树bnnn",
+      "response": "ANSWER: B\nREASON: 资料未明确提供具体答案，但根据二叉树的性质，n个节点的二叉树有n+1个空指针域。"
+    },
+    {
+      "index": 10,
+      "question": "已知二叉树前序和中序遍历，能否唯一确定一棵树：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "地确定一\n棵二叉树。棵二叉树。 例例, , 前序序列前序序列 { ABHFDECKG } { ABHFDECKG } 和中和中\n序序列序序列 { HBDFAEKCG }, { HBDFAEKCG }, 构造二叉树过程如下：构造二叉树过程如下",
+      "response": "ANSWER: B\nREASON: 由二叉树的前序序列和中序序列可唯一地确定一棵二叉树。"
+    },
+    {
+      "index": 11,
+      "question": "森林转二叉树采用：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "n result;\n}\n森林与二叉树的转换森林与二叉树的转换\n森林与二叉树的对应关系森林与二叉树的对应关系\n(1) (1) 森林转化成二叉树的规则森林转化成二叉树的规则\ncc若若F F 为空为空，即，即 nn= 0= 0，，则则\n对应的二叉",
+      "response": "ANSWER: B\nREASON: 森林转化成二叉树的规则中提到，森林中的第一棵树的根作为二叉树的根，其子树作为左子树，其余树构成的森林作为右子树。"
+    },
+    {
+      "index": 12,
+      "question": "树的高度定义为：",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "树的对应关系\n¾¾树的先根树的先根 ··后根后根 ··层次遍历层次遍历\n堆堆堆的定义、堆的插入与删除堆的定义、堆的插入与删除\n¾¾形成堆时用到的向下调整算法形成堆时用到的向下调整算法\n¾¾形成堆时比较次数的上界估计形成堆时比较次数的上界估",
+      "response": "ANSWER: C\nREASON: 树的高度定义为最大层数。"
+    },
+    {
+      "index": 13,
+      "question": "顺序查找的平均查找长度（成功）为：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "“ 找到下标 ”<<Location << endl;\nelse cout << “ 没有找到 .\\n”;\n}\n顺序搜索的平均搜索长度\n\n\n 1\n01\n0n\niin\nii i succ p cp ASL ) 1  (   ",
+      "response": "ANSWER: B\nREASON: 在等概率情形，顺序查找的平均查找长度为 (n+1)/2。"
+    },
+    {
+      "index": 14,
+      "question": "二分查找失败的时间复杂度为：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "的时间于关键码所在的层次，搜索不成功所需的时间\n取决于树的高度。如果我们定义取决于树的高度。如果我们定义 B_B_树的高度树的高度 h h\n为失败结点所在的层次，需要了解树的高度为失败结点所在的层次，需要了解树的高度 h h 与与\n树中的关",
+      "response": "ANSWER: B\nREASON: 二分查找失败的时间复杂度与树的高度相关，为O(log n)。"
+    },
+    {
+      "index": 15,
+      "question": "二叉搜索树查找性能取决于：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "//\n二叉搜索树对象\nStack <BstNode <Type> * > itrStack ;    //\n迭代栈\n}\n与二叉搜索树相关的中序游标类\n最优二叉搜索树\n\n对于有\n n\n个关键码的集合，其关键码有\n n\n!\n种\n不同的排列，可",
+      "response": "ANSWER: B\nREASON: 二叉搜索树的搜索性能直接受树的高度影响。"
+    },
+    {
+      "index": 16,
+      "question": "图的邻接矩阵适用于：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "有一个，还有一个 表示各个顶点之间关表示各个顶点之间关\n系系的的邻接矩阵邻接矩阵 。。\n设图设图 A = (A = ( VV, , EE))是一个有是一个有 n n 个顶点的图，则图的个顶点的图，则图的\n邻接矩阵是一个二维数组邻接矩阵是",
+      "response": "ANSWER: B\nREASON: 资料中未明确指出邻接矩阵适用于哪种类型的图，但通常情况下，邻接矩阵更适用于稠密图。不过基于给定资料，此答案是根据一般知识推断的，资料未明确提供。"
+    },
+    {
+      "index": 17,
+      "question": "无向图中边数为 e，则邻接矩阵中非零元素个数为：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "有一个，还有一个 表示各个顶点之间关表示各个顶点之间关\n系系的的邻接矩阵邻接矩阵 。。\n设图设图 A = (A = ( VV, , EE))是一个有是一个有 n n 个顶点的图，则图的个顶点的图，则图的\n邻接矩阵是一个二维数组邻接矩阵是",
+      "response": "ANSWER: B\nREASON: 无向图的邻接矩阵是对称的，每条边在矩阵中对应两个非零元素。"
+    },
+    {
+      "index": 18,
+      "question": "拓扑排序适用于：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "握 : : 活动网络的拓扑排序算法活动网络的拓扑排序算法\n掌握掌握 : : 求解关键路径的方法求解关键路径的方法\n理解理解 : : 求解最短路径的求解最短路径的 DijkstraDijkstra方法方法 ((不不\n要求算法要求算法 ",
+      "response": "ANSWER: B\nREASON: 拓扑排序适用于有向无环图。"
+    },
+    {
+      "index": 19,
+      "question": "Dijkstra算法不能处理：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "给定一个带权有向图 DD与源点与源点 vv，，\n求从求从 vv到到DD中其它顶点的最短路径。中其它顶点的最短路径。 限定各边上限定各边上\n的权值大于或等于的权值大于或等于 00。。\n为求得这些最短路径，为求得这些最短路径， Dijkst",
+      "response": "ANSWER: B\nREASON: Dijkstra算法在处理含有负权边的图时，不一定能得到正确的结果。"
+    },
+    {
+      "index": 20,
+      "question": "稳定排序算法是：",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "j]]，，且在排且在排\n序之前，对象序之前，对象 rr[[ii]]排在排在 rr[[jj]]前面。如果在排序之前面。如果在排序之\n后，对象后，对象 rr[[ii]]仍在对象仍在对象 rr[[jj]]的前面，则称这个排序的前面，则称这个排序\n",
+      "response": "ANSWER: C\nREASON: 链表的归并排序方法是一种稳定的排序方法。"
+    },
+    {
+      "index": 21,
+      "question": "堆排序的时间复杂度为：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "环中对每一个非叶结点调用了一次堆调整算循环中对每一个非叶结点调用了一次堆调整算\n法法FilterDownFilterDown ( )( )，，因此该循环所用的计算时间因此该循环所用的计算时间\n为：为：\n其中，其中， i i 是层序号，是",
+      "response": "ANSWER: B\nREASON: 堆排序总的时间复杂度为 O(n log n)。"
+    },
+    {
+      "index": 22,
+      "question": "快速排序性能最差情况是：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "的水平，比直接插其排序速度退化到简单排序的水平，比直接插\n入排序还慢。占用附加存储入排序还慢。占用附加存储 ((即栈即栈 ))将达到将达到 o(o(nn))。。\n若能更合理地选择基准对象，使得每次划分所若能更合理地选择基准对象，使得每次",
+      "response": "ANSWER: B\nREASON: 当待排序关键码序列已经基本有序时，快速排序显著变慢。"
+    },
+    {
+      "index": 23,
+      "question": "哈希函数设计原则不包括：",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "函数时的几点要求：构造散列函数时的几点要求：\n散列函数的定义域必须包括需要存储的全部关散列函数的定义域必须包括需要存储的全部关\n键码，如果散列表允许有键码，如果散列表允许有 m m 个地址时个地址时 ,  ,  其值域其值域\n必须在必须",
+      "response": "ANSWER: C\nREASON: 资料中未提及单调性作为哈希函数的设计原则。"
+    },
+    {
+      "index": 24,
+      "question": "负载因子定义为：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "1\ne α − 11\n   链 地 址 法\n  (同义词子表法) 2α+ 1\n              α ≈ + α−αe\n散列表的装填因子散列表的装填因子 αα表明了表中的装满程度。表明了表中的装满程度。\n越大，说明表越满，再插入",
+      "response": "ANSWER: B\nREASON: 负载因子α表明了表中的装满程度，定义为元素数/表长。"
+    },
+    {
+      "index": 25,
+      "question": "B树主要用于：",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "de (q);\nwhile ( j<= q→n&& q→ptr [j] != p )j++;\nif ( !j ) LeftAdjust (p, q, d, j );    //调整\nelseRightAdjust ( p, q, d, j ",
+      "response": "ANSWER: C\nREASON: B树通过调整阶数m来减少树的高度，从而减少读磁盘的次数，适用于外存索引。"
+    }
+  ]
+}
