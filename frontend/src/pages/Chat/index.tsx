@@ -296,7 +296,6 @@ export default function Chat() {
         <div style={{ padding: '12px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
           <RobotOutlined style={{ color: '#00a8ff', fontSize: 18 }} />
           <span style={{ fontWeight: 600, fontSize: 15 }}>{activeSession?.courseName ?? '智能答疑'}</span>
-          {selectedAgent && <Tag color="green" style={{ marginLeft: 4, fontSize: 11 }}>真实后端问答</Tag>}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>

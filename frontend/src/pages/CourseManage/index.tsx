@@ -81,6 +81,20 @@ const statusTag = (status?: ResourceItem['processing_status']) => {
   return <Tag color="default">待处理</Tag>
 }
 
+const formatProcessingError = (error: string) => {
+  if (!error) return ''
+
+  if (error.includes('batch size is invalid') && error.includes('should not be larger than 10')) {
+    return '向量化处理失败：单批发送给 embedding 接口的文本条数超过上限 10。请检查 EMBEDDING_BATCH_SIZE 配置，并重启后端与 worker 后重试。'
+  }
+
+  if (error.includes('task dispatch failed')) {
+    return '任务派发失败：请确认 Celery worker 和 Redis 已正常启动。'
+  }
+
+  return error
+}
+
 export default function CourseManage() {
   const user = useAuthStore((s) => s.user)
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin'
@@ -91,8 +105,8 @@ export default function CourseManage() {
   const [creating, setCreating] = useState(false)
   const [loadingCourses, setLoadingCourses] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [loadingResources, setLoadingResources] = useState(false)
   const [resources, setResources] = useState<ResourceItem[]>([])
-  const [resourceTip, setResourceTip] = useState<string>('当前后端尚未提供资源列表接口，上传成功后仅提示处理状态。')
   const [form] = Form.useForm()
 
   const courseColorMap = useMemo(() => {
@@ -119,6 +133,39 @@ export default function CourseManage() {
     void loadCourses()
   }, [])
 
+  const loadResources = async (courseId: number) => {
+    setLoadingResources(true)
+    try {
+      const { data } = await courseAPI.listResources(courseId)
+      setResources(data)
+    } catch (error: any) {
+      setResources([])
+      message.error(error?.response?.data?.detail || '资源列表加载失败，请检查后端课程资源接口。')
+    } finally {
+      setLoadingResources(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedCourse) {
+      setResources([])
+      return
+    }
+    void loadResources(selectedCourse.id)
+  }, [selectedCourse?.id])
+
+  useEffect(() => {
+    if (!selectedCourse) return
+    const hasPending = resources.some((item) => item.processing_status === 'pending' || item.processing_status === 'processing')
+    if (!hasPending) return
+
+    const timer = window.setInterval(() => {
+      void loadResources(selectedCourse.id)
+    }, 3000)
+
+    return () => window.clearInterval(timer)
+  }, [selectedCourse?.id, resources])
+
   const handleCreate = async (values: { name: string; code: string; description?: string; domain: string }) => {
     setCreating(true)
     try {
@@ -144,18 +191,8 @@ export default function CourseManage() {
     setUploading(true)
     try {
       const { data } = await courseAPI.uploadResource(selectedCourse.id, file)
-      setResources((prev) => [
-        {
-          id: data.id,
-          name: data.name,
-          file_type: file.name.split('.').pop(),
-          processing_status: 'pending',
-          processing_error: null,
-        },
-        ...prev,
-      ])
-      setResourceTip('资料已上传，后端正在处理中。待后端补充资源列表接口后，可展示实时处理状态。')
       message.success(data.message || '上传成功，正在处理中')
+      await loadResources(selectedCourse.id)
     } catch (error: any) {
       const detail = error?.response?.data?.detail || '上传失败'
       const hint = String(detail).includes('task dispatch failed')
@@ -241,16 +278,8 @@ export default function CourseManage() {
                     <p style={{ color: '#999', fontSize: 12 }}>上传后由后端异步处理并构建课程知识库</p>
                   </Upload.Dragger>
 
-                  <Alert
-                    type="info"
-                    showIcon
-                    style={{ marginBottom: 16, borderRadius: 10 }}
-                    message="M2 当前说明"
-                    description={resourceTip}
-                  />
-
                   {resources.length === 0 ? (
-                    <Empty description="暂无本次会话上传记录" />
+                    <Empty description={loadingResources ? '资源列表加载中...' : '暂无资源记录'} />
                   ) : (
                     <Table
                       dataSource={resources}
@@ -266,7 +295,7 @@ export default function CourseManage() {
                         {
                           title: '错误信息',
                           dataIndex: 'processing_error',
-                          render: (error?: string | null) => error ? <Typography.Text type="danger">{error}</Typography.Text> : '-',
+                          render: (error?: string | null) => error ? <Typography.Text type="danger">{formatProcessingError(error)}</Typography.Text> : '-',
                         },
                       ]}
                     />
