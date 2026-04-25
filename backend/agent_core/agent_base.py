@@ -21,7 +21,7 @@ class EduAgentBase(ABC):
     """教育Agent基类 - 所有课程Agent继承此类"""
 
     def __init__(self, config: AgentConfig):
-        """"初始化Agent,加载LLM提供者"""
+        """初始化Agent,加载LLM提供者"""
         self.config = config
         self.llm: BaseLLMProvider = get_llm_provider(config.llm_provider, config.llm_model)
         self._tools: dict = {}
@@ -52,7 +52,7 @@ class EduAgentBase(ABC):
     async def grade(self, submission_content: str, assignment_info: dict) -> dict:
         """作业批改 - 子类应重写""" 
         return {"score": 0, 
-                "max_score": assignment_info.get("max_score", 100)if assignment_info else 100,
+                "max_score": assignment_info.get("max_score", 100) if assignment_info else 100,
                 "comment": "批改功能待实现",
                 "strengths": [],
                 "weaknesses": [],
@@ -96,8 +96,14 @@ class QAAgent(EduAgentBase):
         if retrieved_context:
             system_prompt = (
                 f"{self.config.system_prompt}\n\n"
-                f"以下是与用户问题相关的课程资料：\n{retrieved_context}\n\n"
-                f"请优先依据这些资料回答；如果资料不足，请明确说明。"
+                "以下是与当前问题相关的课程资料，请严格依据资料回答。\n"
+                "回答要求：\n"
+                "1. 优先使用资料中已有的概念、步骤、术语和结论。\n"
+                "2. 如果资料给出了操作步骤，优先按步骤回答，不要泛化成通用教程。\n"
+                "3. 不要补充资料中没有明确出现的做法、规则或结论。\n"
+                "4. 如果资料不足以支持完整回答，必须明确说明“资料未明确提供”。\n"
+                "5. 回答尽量简洁、具体，避免空泛总结。\n\n"
+                f"课程资料：\n{retrieved_context}"
             )
 
         messages = [{"role": "system", "content": system_prompt}]

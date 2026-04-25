@@ -1,0 +1,412 @@
+{
+  "info": {
+    "_postman_id": "96477f37-2fd1-4ab5-9f51-eduai-local",
+    "name": "EduAI Local API",
+    "description": "Local API requests for EduAI M2 validation.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET health",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{health_url}}",
+              "host": [
+                "{{health_url}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "  pm.environment.set('token', json.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{username}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Courses",
+      "item": [
+        {
+          "name": "GET courses",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/courses",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET course detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/courses/{{course_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "courses",
+                "{{course_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST create course",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"M2 Test Course\",\n  \"code\": \"M2-TEST\",\n  \"description\": \"Course for M2 API testing\",\n  \"domain\": \"computer science\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/courses",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "courses"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Resources",
+      "item": [
+        {
+          "name": "GET course resources",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/courses/{{course_id}}/resources",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "courses",
+                "{{course_id}}",
+                "resources"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST upload resource",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/courses/{{course_id}}/resources",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "courses",
+                "{{course_id}}",
+                "resources"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agents",
+      "item": [
+        {
+          "name": "GET agent instances",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/agents/instances?course_id={{course_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agents",
+                "instances"
+              ],
+              "query": [
+                {
+                  "key": "course_id",
+                  "value": "{{course_id}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST create QA agent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.id) {",
+                  "  pm.environment.set('agent_id', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"template_id\": null,\n  \"course_id\": {{course_id}},\n  \"name\": \"QA Demo\",\n  \"description\": \"M2 QA test agent\",\n  \"system_prompt\": \"你是一个课程智能答疑助手，请优先依据课程资料回答。资料不足时，请明确说明。\",\n  \"config\": {},\n  \"tools\": [],\n  \"llm_provider\": \"dashscope\",\n  \"llm_model\": \"qwen-max\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/agents/instances",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "agents",
+                "instances"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "POST chat send",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.session_id) {",
+                  "  pm.environment.set('session_id', json.session_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent_id\": {{agent_id}},\n  \"course_id\": {{course_id}},\n  \"message\": \"Excel 中条件格式怎么设置？\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/chat/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat",
+                "send"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST chat continue session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent_id\": {{agent_id}},\n  \"course_id\": {{course_id}},\n  \"session_id\": {{session_id}},\n  \"message\": \"数组公式是什么？\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/chat/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat",
+                "send"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET chat sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/chat/sessions?course_id={{course_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat",
+                "sessions"
+              ],
+              "query": [
+                {
+                  "key": "course_id",
+                  "value": "{{course_id}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET session messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/chat/sessions/{{session_id}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat",
+                "sessions",
+                "{{session_id}}",
+                "messages"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import re
 from io import BytesIO
 
 import dashscope
+import asyncio
 from minio import Minio
 from docx import Document
 from openpyxl import load_workbook
@@ -18,6 +19,8 @@ from core.config import get_settings
 from models.course import CourseResource, ResourceChunk
 from workers.celery_app import celery_app
 
+from agent_core.llm_provider import get_llm_provider
+
 settings = get_settings()
 sync_engine = create_engine(settings.DATABASE_SYNC_URL)
 SyncSessionLocal = sessionmaker(bind=sync_engine)
@@ -30,6 +33,34 @@ def get_minio_client() -> Minio:
         secret_key=settings.MINIO_SECRET_KEY,
         secure=False,
     )
+
+
+def generate_chunk_embeddings(chunks: list[str]) -> list[list[float]]:
+    if not chunks:
+        return []
+
+    llm_provider = get_llm_provider("dashscope")
+    batch_size = max(settings.EMBEDDING_BATCH_SIZE, 1)
+    embeddings: list[list[float]] = []
+
+    for start in range(0, len(chunks), batch_size):
+        batch = chunks[start : start + batch_size]
+        try:
+            batch_embeddings = asyncio.run(llm_provider.embedding(batch))
+        except Exception as exc:
+            raise RuntimeError(
+                f"chunk embedding generation failed for batch {start // batch_size + 1}: {exc}"
+            ) from exc
+
+        if len(batch_embeddings) != len(batch):
+            raise RuntimeError(
+                "chunk embedding generation returned an unexpected number of vectors: "
+                f"expected {len(batch)}, got {len(batch_embeddings)}"
+            )
+
+        embeddings.extend(batch_embeddings)
+
+    return embeddings
 
 
 def split_text(content: str, chunk_size: int = 500, overlap: int = 100) -> list[str]:
@@ -241,6 +272,8 @@ def process_resource(resource_id: int):
             content = parse_resource_content(resource.file_type, payload)
             chunks = split_text(content)
 
+            chunk_embeddings = generate_chunk_embeddings(chunks)
+
             db.execute(delete(ResourceChunk).where(ResourceChunk.resource_id == resource.id))
 
             for index, chunk in enumerate(chunks):
@@ -255,6 +288,7 @@ def process_resource(resource_id: int):
                             "file_type": resource.file_type,
                             "object_name": resource.file_path,
                         },
+                        embedding=chunk_embeddings[index] if index < len(chunk_embeddings) else None,
                     )
                 )
 
