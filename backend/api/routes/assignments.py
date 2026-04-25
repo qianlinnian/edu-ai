@@ -1,11 +1,14 @@
+from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from core.database import get_db
 from core.security import get_current_user
+from core.storage import upload_bytes
 from models.user import User
-from models.assignment import Assignment, Submission, GradingResult, SubmissionAnnotation, SubmissionStatus
+from models.assignment import Assignment, Submission, GradingResult, SubmissionAnnotation
+from workers.grading_task import grade_submission
 
 router = APIRouter()
 
@@ -82,10 +85,25 @@ async def submit_assignment(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if not content and not file:
+        raise HTTPException(status_code=400, detail="提交内容不能为空")
+
     file_path = None
     if file:
-        # TODO: 上传到MinIO
-        file_path = f"submissions/{assignment_id}/{user.id}/{file.filename}"
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="上传文件名不能为空")
+        payload = await file.read()
+        if not payload:
+            raise HTTPException(status_code=400, detail="上传文件不能为空")
+        file_path = f"submissions/{assignment_id}/{user.id}/{uuid4().hex}_{file.filename}"
+        try:
+            upload_bytes(
+                object_name=file_path,
+                data=payload,
+                content_type=file.content_type or "application/octet-stream",
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"上传MinIO失败: {exc}") from exc
 
     submission = Submission(
         assignment_id=assignment_id,
@@ -97,9 +115,8 @@ async def submit_assignment(
     await db.flush()
     await db.refresh(submission)
 
-    # TODO: 触发异步批改任务
-    # from workers.grading_task import grade_submission
-    # grade_submission.delay(submission.id)
+    # 延迟1秒触发，减少事务提交与worker查询的竞态
+    grade_submission.apply_async(args=[submission.id], countdown=1)
 
     return {"id": submission.id, "status": submission.status, "message": "提交成功，正在批改中"}
 

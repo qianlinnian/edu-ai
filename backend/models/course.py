@@ -38,7 +38,7 @@ class KnowledgeUnit(Base):
     domain: Mapped[str] = mapped_column(String(100))
     difficulty: Mapped[int] = mapped_column(Integer, default=1)  # 1-5
     tags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    embedding = mapped_column(Vector(1536), nullable=True)
+    embedding = mapped_column(Vector(1024), nullable=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("knowledge_units.id"), nullable=True)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -64,6 +64,8 @@ class CourseResource(Base):
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     is_processed: Mapped[bool] = mapped_column(default=False)
+    processing_status: Mapped[str] = mapped_column(String(20), default="pending")
+    processing_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -76,5 +78,5 @@ class ResourceChunk(Base):
     content: Mapped[str] = mapped_column(Text)
     chunk_index: Mapped[int] = mapped_column(Integer)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
-    embedding = mapped_column(Vector(1536), nullable=True)
+    embedding = mapped_column(Vector(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

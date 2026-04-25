@@ -2,35 +2,36 @@
 from abc import ABC
 from dataclasses import dataclass, field
 from agent_core.llm_provider import BaseLLMProvider, get_llm_provider
-
+from agent_core.rag_chain import get_context
 
 @dataclass
 class AgentConfig:
-    """Agent配置"""
+    """Agent基础配置"""
     name: str = "EduAgent"
     course_id: int = 0
     system_prompt: str = "你是一个智能教学助手。"
-    llm_provider: str = "dashscope"
+    llm_provider: str = "dashscope" # 后续应当扩展为 可选 provider 模型
     llm_model: str = "qwen-max"
     temperature: float = 0.7
     max_tokens: int = 2048
-    tools: list[str] = field(default_factory=list)
+    tools: list[str] = field(default_factory=list) # 可选工具列表，后续可扩展为更复杂的工具配置
 
 
 class EduAgentBase(ABC):
     """教育Agent基类 - 所有课程Agent继承此类"""
 
     def __init__(self, config: AgentConfig):
+        """初始化Agent,加载LLM提供者"""
         self.config = config
         self.llm: BaseLLMProvider = get_llm_provider(config.llm_provider, config.llm_model)
         self._tools: dict = {}
 
     def register_tool(self, name: str, func, description: str = ""):
-        """注册自定义工具"""
+        """注册自定义工具 未来可能扩展支持工具调用"""
         self._tools[name] = {"func": func, "description": description}
 
     async def chat(self, query: str, history: list[dict] = None, context: dict = None) -> str:
-        """智能答疑 - 子类可重写以实现RAG等增强逻辑"""
+        """负责通话调用 - 智能答疑 - 子类可重写以实现RAG等增强逻辑"""
         messages = [{"role": "system", "content": self.config.system_prompt}]
         if history:
             messages.extend(history)
@@ -38,7 +39,7 @@ class EduAgentBase(ABC):
         return await self.llm.chat(messages, temperature=self.config.temperature, max_tokens=self.config.max_tokens)
 
     async def chat_stream(self, query: str, history: list[dict] = None, context: dict = None):
-        """流式智能答疑"""
+        """流式智能答疑 用于实现边生成边展示的交互体验 - 子类可重写以实现RAG等增强逻辑"""
         messages = [{"role": "system", "content": self.config.system_prompt}]
         if history:
             messages.extend(history)
@@ -49,9 +50,14 @@ class EduAgentBase(ABC):
             yield chunk
 
     async def grade(self, submission_content: str, assignment_info: dict) -> dict:
-        """作业批改 - 子类应重写"""
-        # TODO: 实现默认批改逻辑
-        return {"score": 0, "annotations": [], "comment": "批改功能待实现"}
+        """作业批改 - 子类应重写""" 
+        return {"score": 0, 
+                "max_score": assignment_info.get("max_score", 100) if assignment_info else 100,
+                "comment": "批改功能待实现",
+                "strengths": [],
+                "weaknesses": [],
+                "annotations": []
+        }
 
     async def analyze_learning(self, student_id: int, course_id: int) -> dict:
         """学情分析 - 子类可重写"""
@@ -65,7 +71,7 @@ class EduAgentBase(ABC):
 
     @classmethod
     def from_config(cls, config_dict: dict) -> "EduAgentBase":
-        """从配置字典创建Agent实例"""
+        """从配置字典创建Agent实例 方便从数据库中调用config创建Agent"""
         config = AgentConfig(**config_dict)
         return cls(config)
 
@@ -74,16 +80,38 @@ class QAAgent(EduAgentBase):
     """答疑Agent - 基于RAG的课程答疑"""
 
     def __init__(self, config: AgentConfig):
-        super().__init__(config)
-        # TODO: 初始化RAG检索链
-        # self.rag_chain = ...
+        super().__init__(config) 
 
     async def chat(self, query: str, history: list[dict] = None, context: dict = None) -> str:
-        # TODO: 实现RAG增强的答疑逻辑
-        # 1. 向量检索相关知识
-        # 2. 构建增强Prompt
-        # 3. 调用LLM生成回答
-        return await super().chat(query, history, context)
+        """先查询课程资料 后面接着聊天生成回答 - 实现RAG增强的答疑逻辑"""
+        db = context["db"] if context and "db" in context else None
+        retrieved_context = ""
+        if db is not None and self.config.course_id:
+            retrieved_context = await get_context(
+                db=db,
+                course_id=self.config.course_id,
+                query=query,
+            )
+        system_prompt = self.config.system_prompt
+        if retrieved_context:
+            system_prompt = (
+                f"{self.config.system_prompt}\n\n"
+                "以下是与当前问题相关的课程资料，请严格依据资料回答。\n"
+                "回答要求：\n"
+                "1. 优先使用资料中已有的概念、步骤、术语和结论。\n"
+                "2. 如果资料给出了操作步骤，优先按步骤回答，不要泛化成通用教程。\n"
+                "3. 不要补充资料中没有明确出现的做法、规则或结论。\n"
+                "4. 如果资料不足以支持完整回答，必须明确说明“资料未明确提供”。\n"
+                "5. 回答尽量简洁、具体，避免空泛总结。\n\n"
+                f"课程资料：\n{retrieved_context}"
+            )
+
+        messages = [{"role": "system", "content": system_prompt}]
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": query})
+
+        return await self.llm.chat(messages, temperature=self.config.temperature, max_tokens=self.config.max_tokens)
 
 
 class GradingAgent(EduAgentBase):
