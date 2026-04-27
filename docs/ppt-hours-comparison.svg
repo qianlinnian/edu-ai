@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#F5FAFF"/>
+
+  <text x="80" y="78" font-family="Microsoft YaHei, Arial, sans-serif" font-size="40" font-weight="700" fill="#1F4E79">计划工时与实际工时对比</text>
+  <text x="80" y="118" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#5F6F7A">2026.04.13 - 2026.04.26 双周工作投入</text>
+
+  <rect x="80" y="150" width="1120" height="500" rx="18" fill="#FFFFFF" stroke="#D9EAF7" stroke-width="2"/>
+
+  <g font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#5F6F7A">
+    <line x1="300" y1="575" x2="1060" y2="575" stroke="#D9EAF7" stroke-width="2"/>
+    <line x1="300" y1="210" x2="300" y2="575" stroke="#D9EAF7" stroke-width="2"/>
+    <text x="300" y="610" text-anchor="middle">0h</text>
+    <text x="490" y="610" text-anchor="middle">5h</text>
+    <text x="680" y="610" text-anchor="middle">10h</text>
+    <text x="870" y="610" text-anchor="middle">15h</text>
+    <text x="1060" y="610" text-anchor="middle">20h</text>
+
+    <line x1="490" y1="210" x2="490" y2="575" stroke="#EEF5FB" stroke-width="1"/>
+    <line x1="680" y1="210" x2="680" y2="575" stroke="#EEF5FB" stroke-width="1"/>
+    <line x1="870" y1="210" x2="870" y2="575" stroke="#EEF5FB" stroke-width="1"/>
+    <line x1="1060" y1="210" x2="1060" y2="575" stroke="#EEF5FB" stroke-width="1"/>
+  </g>
+
+  <g font-family="Microsoft YaHei, Arial, sans-serif">
+    <text x="125" y="254" font-size="24" font-weight="700" fill="#1F4E79">冯俊财</text>
+    <text x="125" y="337" font-size="24" font-weight="700" fill="#1F4E79">路清怡</text>
+    <text x="125" y="420" font-size="24" font-weight="700" fill="#1F4E79">张诗蔻</text>
+    <text x="125" y="503" font-size="24" font-weight="700" fill="#1F4E79">纪鹏</text>
+
+    <rect x="300" y="224" width="684" height="22" rx="11" fill="#BFDDF4"/>
+    <rect x="300" y="252" width="760" height="22" rx="11" fill="#5B9BD5"/>
+    <text x="1000" y="242" font-size="18" fill="#5F6F7A">计划 18h</text>
+    <text x="1080" y="270" font-size="18" fill="#1F4E79" font-weight="700">实际 20h</text>
+    
+    <rect x="300" y="307" width="608" height="22" rx="11" fill="#BFDDF4"/>
+    <rect x="300" y="335" width="570" height="22" rx="11" fill="#5B9BD5"/>
+    <text x="923" y="325" font-size="18" fill="#5F6F7A">计划 16h</text>
+    <text x="930" y="353" font-size="18" fill="#1F4E79" font-weight="700">实际 15h</text>
+
+    <rect x="300" y="390" width="684" height="22" rx="11" fill="#BFDDF4"/>
+    <rect x="300" y="418" width="570" height="22" rx="11" fill="#5B9BD5"/>
+    <text x="1000" y="408" font-size="18" fill="#5F6F7A">计划 18h</text>
+    <text x="930" y="436" font-size="18" fill="#1F4E79" font-weight="700">实际 15h</text>
+
+    <rect x="300" y="473" width="684" height="22" rx="11" fill="#BFDDF4"/>
+    <rect x="300" y="501" width="760" height="22" rx="11" fill="#5B9BD5"/>
+    <text x="1000" y="491" font-size="18" fill="#5F6F7A">计划 18h</text>
+    <text x="1080" y="519" font-size="18" fill="#1F4E79" font-weight="700">实际 20h</text>
+  </g>
+
+  <g font-family="Microsoft YaHei, Arial, sans-serif" font-size="18">
+    <rect x="830" y="168" width="22" height="14" rx="7" fill="#BFDDF4"/>
+    <text x="860" y="181" fill="#5F6F7A">计划工时</text>
+    <rect x="970" y="168" width="22" height="14" rx="7" fill="#5B9BD5"/>
+    <text x="1000" y="181" fill="#5F6F7A">实际工时</text>
+  </g>
+
+  <rect x="80" y="665" width="1120" height="2" fill="#D9EAF7"/>
+  <text x="80" y="695" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#5F6F7A">总计：计划 70h，实际 70h；整体投入与计划基本一致，成员间存在小幅任务调整。</text>
+</svg>
