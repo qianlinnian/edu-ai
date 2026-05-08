@@ -103,17 +103,6 @@ export default function Login() {
           智能答疑 · 作业批改 · 学情分析 · 个性化练习<br />
           让每一门课程都拥有专属 AI 教学助手
         </p>
-
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          {['智能答疑 ≥95%', '批注式批改', '学情预警', '可视化构建'].map(tag => (
-            <div key={tag} style={{
-              padding: '5px 16px', borderRadius: 20,
-              border: '1px solid rgba(0,168,255,0.4)',
-              color: 'rgba(255,255,255,0.75)', fontSize: 12,
-              background: 'rgba(0,168,255,0.08)',
-            }}>{tag}</div>
-          ))}
-        </div>
       </div>
 
       {/* 右侧登录卡片 */}
