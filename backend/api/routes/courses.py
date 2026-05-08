@@ -1,15 +1,17 @@
-from uuid import uuid4
+from __future__ import annotations
+
 from datetime import datetime
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from core.security import get_current_user
-from core.storage import upload_bytes
-from models.course import Course, CourseResource, Enrollment, KnowledgeUnit
+from core.storage import remove_object, upload_bytes
+from models.course import Course, CourseResource, Enrollment, KnowledgeUnit, ResourceChunk
 from models.user import User
 from workers.embedding_task import process_resource
 
@@ -57,12 +59,10 @@ class KnowledgeUnitResponse(BaseModel):
 
 class CourseResourceResponse(BaseModel):
     id: int
-    course_id: int
     name: str
     file_type: str
     file_size: int
     chunk_count: int
-    is_processed: bool
     processing_status: str
     processing_error: str | None
     created_at: datetime
@@ -90,7 +90,7 @@ async def get_course(course_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Course).where(Course.id == course_id))
     course = result.scalar_one_or_none()
     if not course:
-        raise HTTPException(status_code=404, detail="课程不存在")
+        raise HTTPException(status_code=404, detail="Course not found")
     return course
 
 
@@ -99,7 +99,7 @@ async def enroll_course(course_id: int, db: AsyncSession = Depends(get_db), user
     enrollment = Enrollment(student_id=user.id, course_id=course_id)
     db.add(enrollment)
     await db.flush()
-    return {"message": "选课成功"}
+    return {"message": "enrolled"}
 
 
 @router.post("/{course_id}/knowledge-units", response_model=KnowledgeUnitResponse)
@@ -125,20 +125,14 @@ async def list_knowledge_units(course_id: int, db: AsyncSession = Depends(get_db
 
 
 @router.get("/{course_id}/resources", response_model=list[CourseResourceResponse])
-async def list_resources(
-    course_id: int,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+async def list_resources(course_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     course_result = await db.execute(select(Course).where(Course.id == course_id))
     course = course_result.scalar_one_or_none()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
     result = await db.execute(
-        select(CourseResource)
-        .where(CourseResource.course_id == course_id)
-        .order_by(CourseResource.created_at.desc())
+        select(CourseResource).where(CourseResource.course_id == course_id).order_by(CourseResource.created_at.desc())
     )
     return result.scalars().all()
 
@@ -194,4 +188,68 @@ async def upload_resource(
         await db.commit()
         raise HTTPException(status_code=500, detail=f"Failed to process resource: {exc}") from exc
 
-    return {"id": resource.id, "name": resource.name, "message": "上传成功，正在处理中"}
+    return {"id": resource.id, "name": resource.name, "message": "uploaded"}
+
+
+@router.delete("/{course_id}/resources/{resource_id}")
+async def delete_resource(
+    course_id: int,
+    resource_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    resource_result = await db.execute(
+        select(CourseResource).where(CourseResource.id == resource_id, CourseResource.course_id == course_id)
+    )
+    resource = resource_result.scalar_one_or_none()
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found")
+
+    await db.execute(delete(ResourceChunk).where(ResourceChunk.resource_id == resource.id))
+    await db.execute(delete(CourseResource).where(CourseResource.id == resource.id))
+
+    minio_deleted = False
+    try:
+        remove_object(object_name=resource.file_path)
+        minio_deleted = True
+    except Exception:
+        minio_deleted = False
+
+    await db.commit()
+    return {"message": "deleted", "minio_deleted": minio_deleted}
+
+
+@router.post("/{course_id}/resources/{resource_id}/retry")
+async def retry_resource_processing(
+    course_id: int,
+    resource_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    resource_result = await db.execute(
+        select(CourseResource).where(CourseResource.id == resource_id, CourseResource.course_id == course_id)
+    )
+    resource = resource_result.scalar_one_or_none()
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found")
+
+    if resource.processing_status == "processing":
+        raise HTTPException(status_code=409, detail="Resource is processing")
+
+    await db.execute(delete(ResourceChunk).where(ResourceChunk.resource_id == resource.id))
+    resource.processing_status = "pending"
+    resource.processing_error = None
+    resource.chunk_count = 0
+    resource.is_processed = False
+    await db.commit()
+
+    try:
+        process_resource.apply_async(args=[resource.id], countdown=1)
+    except Exception as exc:
+        resource.processing_status = "failed"
+        resource.processing_error = f"task dispatch failed: {exc}"
+        await db.commit()
+        raise HTTPException(status_code=500, detail=f"Failed to retry resource processing: {exc}") from exc
+
+    return {"message": "retry_queued", "id": resource.id, "name": resource.name}
+
