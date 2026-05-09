@@ -1,6 +1,10 @@
 # 可嵌入式跨课程AI Agent通用架构平台 
 ## Statue
-DEVELOPPING!!!
+
+> [!IMPORTANT]
+> DEVELOPING!   
+> 仓库主要在个人分支中开发完成后，并入 `dev` 分支，测试检查，最后再并入 `main` 分支。
+
 ## 环境准备
 
 ### 1. 安装必备软件
