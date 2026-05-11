@@ -15,12 +15,13 @@ from models.assignment import Assignment, GradingResult, Submission, SubmissionS
 from models.course import KnowledgeUnit
 from models.learning import LearningAlert, StudentKnowledgeMastery
 from workers.celery_app import celery_app
-from workers.embedding_task import get_minio_client, parse_resource_content
 
 settings = get_settings()
 sync_engine = create_engine(settings.DATABASE_SYNC_URL)
 SyncSessionLocal = sessionmaker(bind=sync_engine)
 MAX_GRADING_CONTENT_CHARS = 12000
+ANNOTATION_TYPES = {"error", "warning", "suggestion", "praise"}
+ANNOTATION_SEVERITIES = {"low", "medium", "high", "critical"}
 
 
 def _calculate_score(*, content: str | None, has_file: bool, max_score: float) -> float:
@@ -49,7 +50,7 @@ def _knowledge_point_ids(value: list | None) -> list[int]:
 def _safe_json_loads(raw_text: str) -> dict[str, Any]:
     """从 LLM 输出中提取 JSON；如果模型包了 markdown 代码块，也尽量兼容。"""
     text = raw_text.strip()
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
     if fenced:
         text = fenced.group(1)
     else:
@@ -57,7 +58,10 @@ def _safe_json_loads(raw_text: str) -> dict[str, Any]:
         end = text.rfind("}")
         if start >= 0 and end > start:
             text = text[start : end + 1]
-    return json.loads(text)
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError("LLM grading output must be a JSON object")
+    return data
 
 
 def _normalize_list(value: Any) -> list[str]:
@@ -67,6 +71,18 @@ def _normalize_list(value: Any) -> list[str]:
         return [str(item).strip() for item in value if str(item).strip()]
     text = str(value).strip()
     return [text] if text else []
+
+
+def _normalize_score(value: Any, max_score: float) -> float:
+    try:
+        if isinstance(value, str):
+            match = re.search(r"-?\d+(?:\.\d+)?", value)
+            score = float(match.group(0)) if match else 0.0
+        else:
+            score = float(value)
+    except (TypeError, ValueError):
+        score = 0.0
+    return round(min(max(score, 0.0), float(max_score)), 2)
 
 
 def _file_type_from_path(path: str | None) -> str:
@@ -82,6 +98,8 @@ def _load_submission_file_text(file_path: str | None) -> tuple[str, str | None]:
 
     response = None
     try:
+        from workers.embedding_task import get_minio_client, parse_resource_content
+
         client = get_minio_client()
         response = client.get_object(settings.MINIO_BUCKET, file_path)
         payload = response.read()
@@ -94,8 +112,11 @@ def _load_submission_file_text(file_path: str | None) -> tuple[str, str | None]:
         return "", f"附件 {file_path} 解析失败：{exc}"
     finally:
         if response is not None:
-            response.close()
-            response.release_conn()
+            try:
+                response.close()
+                response.release_conn()
+            except Exception:
+                pass
 
 
 def _build_grading_content(submission: Submission) -> tuple[str, str]:
@@ -125,15 +146,125 @@ def _format_assignment_context(assignment: Assignment) -> str:
         rubric_text = "老师未填写评分标准。默认按正确性 60%、完整性 25%、表达清晰度 15% 进行参考评分。"
 
     reference_answer = assignment.reference_answer or "老师未提供参考答案，请主要依据作业说明和评分标准进行审慎评分。"
+    knowledge_point_ids = _knowledge_point_ids(assignment.knowledge_points)
     return (
         f"作业标题：{assignment.title}\n"
         f"作业说明：{assignment.description or '无'}\n"
         f"作业类型：{assignment.assignment_type}\n"
         f"满分：{assignment.max_score}\n"
+        f"关联知识点 ID：{knowledge_point_ids or '无'}\n"
         f"作业补充信息：\n"
         f"- 评分标准：{rubric_text}\n"
         f"- 参考答案：{reference_answer}"
     )
+
+
+def _fallback_knowledge_scores(knowledge_point_ids: list[int], score: float, max_score: float) -> dict[str, float]:
+    if not knowledge_point_ids:
+        return {}
+    ratio = min(max(score / max(max_score, 1.0), 0.0), 1.0)
+    return {str(kp_id): round(ratio * 100, 2) for kp_id in knowledge_point_ids}
+
+
+def _normalize_knowledge_scores(
+    value: Any,
+    *,
+    knowledge_point_ids: list[int],
+    score: float,
+    max_score: float,
+) -> dict[str, float]:
+    allowed_ids = {str(kp_id) for kp_id in knowledge_point_ids}
+    output: dict[str, float] = {}
+
+    if isinstance(value, dict):
+        items = value.items()
+    elif isinstance(value, list):
+        items = []
+        for item in value:
+            if isinstance(item, dict):
+                kp_id = item.get("knowledge_point_id") or item.get("id")
+                kp_score = item.get("score")
+                items.append((kp_id, kp_score))
+    else:
+        items = []
+
+    for key, raw_score in items:
+        key_text = str(key).strip()
+        if not key_text:
+            continue
+        if allowed_ids and key_text not in allowed_ids:
+            continue
+        output[key_text] = _normalize_score(raw_score, 100.0)
+
+    return output or _fallback_knowledge_scores(knowledge_point_ids, score, max_score)
+
+
+def _normalize_annotations(value: Any, *, knowledge_point_ids: list[int]) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    allowed_ids = set(knowledge_point_ids)
+    annotations: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+
+        annotation_type = str(item.get("annotation_type") or item.get("type") or "suggestion").strip().lower()
+        severity = str(item.get("severity") or "medium").strip().lower()
+        content = str(item.get("content") or item.get("message") or "").strip()
+        if not content:
+            continue
+
+        position = item.get("position")
+        if not isinstance(position, dict):
+            position = {}
+        position = {"type": "text", **position}
+
+        kp_id = item.get("knowledge_point_id")
+        try:
+            kp_id = int(kp_id) if kp_id is not None else None
+        except (TypeError, ValueError):
+            kp_id = None
+        if kp_id is not None and allowed_ids and kp_id not in allowed_ids:
+            kp_id = None
+
+        annotations.append(
+            {
+                "annotation_type": annotation_type if annotation_type in ANNOTATION_TYPES else "suggestion",
+                "position": position,
+                "content": content,
+                "severity": severity if severity in ANNOTATION_SEVERITIES else "medium",
+                "knowledge_point_id": kp_id,
+            }
+        )
+
+    return annotations
+
+
+def _standardize_grading_payload(
+    data: dict[str, Any],
+    *,
+    assignment: Assignment,
+    source: str,
+) -> dict[str, Any]:
+    score = _normalize_score(data.get("score"), assignment.max_score)
+    knowledge_point_ids = _knowledge_point_ids(assignment.knowledge_points)
+    overall_comment = str(data.get("overall_comment") or data.get("comment") or "已完成自动批改。").strip()
+
+    return {
+        "score": score,
+        "overall_comment": overall_comment or "已完成自动批改。",
+        "strengths": _normalize_list(data.get("strengths")),
+        "weaknesses": _normalize_list(data.get("weaknesses")),
+        "annotations": _normalize_annotations(data.get("annotations"), knowledge_point_ids=knowledge_point_ids),
+        "knowledge_point_scores": _normalize_knowledge_scores(
+            data.get("knowledge_point_scores"),
+            knowledge_point_ids=knowledge_point_ids,
+            score=score,
+            max_score=assignment.max_score,
+        ),
+        "source": source,
+    }
 
 
 async def _grade_with_llm(*, assignment: Assignment, submission: Submission) -> dict[str, Any]:
@@ -148,8 +279,8 @@ async def _grade_with_llm(*, assignment: Assignment, submission: Submission) -> 
         {
             "role": "system",
             "content": (
-                "你是教学平台的自动批改助手。请根据作业题目、评分标准、参考答案和学生提交内容进行评分。"
-                "必须只返回 JSON，不要返回 markdown，不要添加解释性前后缀。"
+                "你是教学平台的自动批改助手。请根据作业题目、评分标准、参考答案、关联知识点和学生提交内容进行评分。"
+                "必须只返回 JSON 对象，不要返回 markdown，不要添加解释性前后缀。"
             ),
         },
         {
@@ -158,27 +289,28 @@ async def _grade_with_llm(*, assignment: Assignment, submission: Submission) -> 
                 f"{assignment_context}\n"
                 f"{file_note}\n\n"
                 f"学生提交内容（包含文本提交和可解析附件内容）：\n{content or '无可解析文本内容'}\n\n"
-                "请返回如下 JSON："
-                "{"
-                '"score": 0 到满分之间的数字, '
-                '"overall_comment": "总体评价", '
-                '"strengths": ["优点1"], '
-                '"weaknesses": ["不足1"]'
+                "请严格返回如下 JSON 结构：\n"
+                "{\n"
+                '  "score": 0 到满分之间的数字,\n'
+                '  "overall_comment": "总体评价，不能为空",\n'
+                '  "strengths": ["优点1"],\n'
+                '  "weaknesses": ["不足1"],\n'
+                '  "knowledge_point_scores": {"知识点ID": 0 到 100 的数字},\n'
+                '  "annotations": [\n'
+                "    {\n"
+                '      "annotation_type": "error|warning|suggestion|praise",\n'
+                '      "position": {"type": "text", "line": 1, "paragraph": 1, "quote": "学生原文片段"},\n'
+                '      "content": "批注意见",\n'
+                '      "severity": "low|medium|high|critical",\n'
+                '      "knowledge_point_id": 知识点ID或null\n'
+                "    }\n"
+                "  ]\n"
                 "}"
             ),
         },
     ]
     raw = await provider.chat(messages, temperature=0.2)
-    data = _safe_json_loads(raw)
-    score = float(data.get("score", 0.0))
-    score = round(min(max(score, 0.0), float(assignment.max_score)), 2)
-    return {
-        "score": score,
-        "overall_comment": str(data.get("overall_comment") or "已完成自动批改。"),
-        "strengths": _normalize_list(data.get("strengths")),
-        "weaknesses": _normalize_list(data.get("weaknesses")),
-        "source": "llm",
-    }
+    return _standardize_grading_payload(_safe_json_loads(raw), assignment=assignment, source="llm")
 
 
 def _fallback_grading(*, assignment: Assignment, submission: Submission, error: str | None = None) -> dict[str, Any]:
@@ -190,13 +322,24 @@ def _fallback_grading(*, assignment: Assignment, submission: Submission, error: 
     comment = "已完成自动批改（规则兜底）。"
     if error:
         comment += f" LLM 批改暂不可用，已回退到基础规则：{error[:180]}"
-    return {
+    data = {
         "score": score,
         "overall_comment": comment,
         "strengths": ["提交格式完整"] if submission.content or submission.file_path else [],
         "weaknesses": [] if score >= assignment.max_score * 0.6 else ["答案内容偏少，建议补充细节"],
-        "source": "fallback",
+        "annotations": [
+            {
+                "annotation_type": "suggestion",
+                "position": {"type": "text", "paragraph": 1, "quote": (submission.content or "")[:80]},
+                "content": "建议补充关键步骤、依据或示例，使答案更完整。",
+                "severity": "medium",
+                "knowledge_point_id": None,
+            }
+        ]
+        if score < assignment.max_score * 0.6
+        else [],
     }
+    return _standardize_grading_payload(data, assignment=assignment, source="fallback")
 
 
 def _grade_submission_content(*, assignment: Assignment, submission: Submission) -> dict[str, Any]:
@@ -314,7 +457,7 @@ def grade_submission(submission_id: int):
             db.flush()
 
             grading = _grade_submission_content(assignment=assignment, submission=submission)
-            knowledge_point_scores = _update_mastery_from_grading(
+            mastery_point_scores = _update_mastery_from_grading(
                 db,
                 student_id=submission.student_id,
                 course_id=assignment.course_id,
@@ -322,6 +465,9 @@ def grade_submission(submission_id: int):
                 score=grading["score"],
                 max_score=assignment.max_score,
             )
+            knowledge_point_scores = grading.get("knowledge_point_scores") or {
+                str(kp_id): score for kp_id, score in mastery_point_scores.items()
+            }
 
             existing = db.execute(
                 select(GradingResult).where(GradingResult.submission_id == submission.id)
@@ -354,6 +500,8 @@ def grade_submission(submission_id: int):
                 "status": "graded",
                 "score": grading["score"],
                 "source": grading["source"],
+                "annotations": grading["annotations"],
+                "knowledge_point_scores": knowledge_point_scores,
             }
     except Exception as exc:
         with SyncSessionLocal() as db:
