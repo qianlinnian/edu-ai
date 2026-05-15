@@ -1,10 +1,14 @@
-import { Card, Row, Col, Statistic, List, Tag, Progress, Alert } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, Card, Col, Empty, List, Progress, Row, Select, Skeleton, Statistic, Tag } from 'antd'
 import {
   BookOutlined, TeamOutlined, FileTextOutlined, AlertOutlined,
   CheckCircleOutlined, ClockCircleOutlined, FireOutlined,
 } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
+import { analyticsAPI, assignmentAPI, courseAPI } from '../../services/api'
 import { useAuthStore } from '../../hooks/useAuthStore'
+
+type StudentTodo = { id: number; name: string; course: string; ddl?: string }
 
 const submitTrendOption = {
   tooltip: { trigger: 'axis' },
@@ -89,21 +93,85 @@ const recentAssignments = [
   { name: '链表实现', course: '数据结构', submitted: 20, total: 25, ddl: '04-12' },
 ]
 
-const studentTodos = [
-  { name: 'Python循环练习', course: 'Python程序设计', ddl: '04-10' },
-  { name: '数据结构链表', course: '数据结构', ddl: '04-12' },
-]
 
-const knowledgeProgress = [
-  { label: 'Python基础', val: 92, color: '#52c41a' },
-  { label: '循环结构', val: 63, color: '#faad14' },
-  { label: '函数定义', val: 85, color: '#52c41a' },
-  { label: '递归算法', val: 42, color: '#ff4d4f' },
-]
+
+const buildStudentRadarOption = (items: { label: string; value: number }[]) => ({
+  tooltip: {},
+  radar: {
+    indicator: items.map((item) => ({ name: item.label, max: 100 })),
+    radius: 90,
+    axisName: { color: '#555', fontSize: 12 },
+  },
+  series: [{
+    type: 'radar',
+    data: [{
+      value: items.map((item) => item.value),
+      name: '我的掌握度',
+      itemStyle: { color: '#00a8ff' },
+      areaStyle: { color: 'rgba(0,168,255,0.15)' },
+    }],
+  }],
+})
 
 export default function Dashboard() {
   const user = useAuthStore(s => s.user)
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin'
+  const [courses, setCourses] = useState<Course[]>([])
+  const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>()
+  const [mastery, setMastery] = useState<{ label: string; value: number }[]>([])
+  const [alerts, setAlerts] = useState<{ id?: number; level?: 'error' | 'warning' | 'info'; message?: string; title?: string; content?: string; student_name?: string }[]>([])
+  const [studentTodosReal, setStudentTodosReal] = useState<StudentTodo[]>([])
+  const [studentLoading, setStudentLoading] = useState(false)
+
+  const studentRadarOption = useMemo(
+    () => buildStudentRadarOption(mastery.length ? mastery : [{ label: '暂无数据', value: 0 }]),
+    [mastery],
+  )
+
+  const loadStudentDashboard = async (courseId?: number, courseList?: Course[]) => {
+    if (!user) return
+    const activeCourseId = courseId || selectedCourseId || courseList?.[0]?.id
+    if (!activeCourseId) return
+
+    setStudentLoading(true)
+    try {
+      const [masteryRes, alertsRes, assignmentRes] = await Promise.all([
+        analyticsAPI.getStudentMastery(user.id, activeCourseId).catch(() => ({ data: [] })),
+        analyticsAPI.getAlerts(activeCourseId).catch(() => ({ data: [] })),
+        assignmentAPI.list(activeCourseId).catch(() => ({ data: [] })),
+      ])
+      const mappedMastery = (masteryRes.data || []).map((item: any) => ({
+        label: item.knowledge_point || item.label || item.name || `知识点${item.knowledge_point_id ?? ''}`,
+        value: Number(item.mastery ?? item.score ?? 0),
+      }))
+      const sourceCourses = courseList || courses
+      const mappedTodos = (assignmentRes.data || []).map((item: any) => ({
+        id: item.id,
+        name: item.title,
+        course: sourceCourses.find((course) => course.id === activeCourseId)?.name || `课程 ${activeCourseId}`,
+        ddl: item.due_date ? new Date(item.due_date).toLocaleDateString() : '未设置',
+      }))
+      setMastery(mappedMastery)
+      setAlerts(alertsRes.data || [])
+      setStudentTodosReal(mappedTodos)
+    } finally {
+      setStudentLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (isTeacher) return
+    const bootstrap = async () => {
+      const { data } = await courseAPI.list().catch(() => ({ data: [] }))
+      setCourses(data)
+      const firstId = data?.[0]?.id
+      if (firstId) {
+        setSelectedCourseId(firstId)
+        await loadStudentDashboard(firstId, data)
+      }
+    }
+    void bootstrap()
+  }, [isTeacher])
 
   if (isTeacher) {
     return (
@@ -206,65 +274,68 @@ export default function Dashboard() {
   }
 
   // 学生视角
-  return (
-    <div>
-      <div style={{ marginBottom: 24 }}>
-        <span style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a' }}>
-          👋 你好，{user?.full_name}！
-        </span>
-        <span style={{ fontSize: 14, color: '#999', marginLeft: 12 }}>
-          今天有 2 份作业待提交
-        </span>
-      </div>
+return (
+  <div>
+    <div style={{ marginBottom: 24 }}>
+      <span style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a' }}>
+        👋 你好，{user?.full_name}！
+      </span>
+      <span style={{ fontSize: 14, color: '#999', marginLeft: 12 }}>
+        已为你接入真实学情与预警信息
+      </span>
+    </div>
 
-      <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} lg={6}>
-          <Card bordered={false} style={{ borderRadius: 12, background: 'linear-gradient(135deg,#e6f7ff,#bae7ff)' }}>
-            <Statistic title="选修课程" value={4}
-              prefix={<BookOutlined style={{ color: '#00a8ff' }} />}
-              valueStyle={{ color: '#00a8ff', fontWeight: 700 }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card bordered={false} style={{ borderRadius: 12, background: 'linear-gradient(135deg,#fff1f0,#ffccc7)' }}>
-            <Statistic title="待交作业" value={2}
-              prefix={<ClockCircleOutlined style={{ color: '#ff4d4f' }} />}
-              valueStyle={{ color: '#ff4d4f', fontWeight: 700 }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card bordered={false} style={{ borderRadius: 12, background: 'linear-gradient(135deg,#f6ffed,#d9f7be)' }}>
-            <Statistic title="已完成作业" value={12}
-              prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-              valueStyle={{ color: '#52c41a', fontWeight: 700 }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card bordered={false} style={{ borderRadius: 12, background: 'linear-gradient(135deg,#fffbe6,#fff1b8)' }}>
-            <Statistic title="薄弱知识点" value={3}
-              prefix={<FireOutlined style={{ color: '#faad14' }} />}
-              valueStyle={{ color: '#faad14', fontWeight: 700 }}
-              suffix="个" />
-          </Card>
-        </Col>
-      </Row>
+    <Row gutter={[16, 16]}>
+      <Col xs={24} sm={12} lg={6}>
+        <Card bordered={false} style={{ borderRadius: 12, background: 'linear-gradient(135deg,#e6f7ff,#bae7ff)' }}>
+          <Statistic title="选修课程" value={courses.length}
+            prefix={<BookOutlined style={{ color: '#00a8ff' }} />}
+            valueStyle={{ color: '#00a8ff', fontWeight: 700 }} />
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} lg={6}>
+        <Card bordered={false} style={{ borderRadius: 12, background: 'linear-gradient(135deg,#fff1f0,#ffccc7)' }}>
+          <Statistic title="学习预警" value={alerts.length}
+            prefix={<ClockCircleOutlined style={{ color: '#ff4d4f' }} />}
+            valueStyle={{ color: '#ff4d4f', fontWeight: 700 }} />
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} lg={6}>
+        <Card bordered={false} style={{ borderRadius: 12, background: 'linear-gradient(135deg,#f6ffed,#d9f7be)' }}>
+          <Statistic title="已评估知识点" value={mastery.length}
+            prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+            valueStyle={{ color: '#52c41a', fontWeight: 700 }} />
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} lg={6}>
+        <Card bordered={false} style={{ borderRadius: 12, background: 'linear-gradient(135deg,#fffbe6,#fff1b8)' }}>
+          <Statistic title="薄弱知识点" value={mastery.filter((item) => item.value < 60).length}
+            prefix={<FireOutlined style={{ color: '#faad14' }} />}
+            valueStyle={{ color: '#faad14', fontWeight: 700 }}
+            suffix="个" />
+        </Card>
+      </Col>
+    </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={10}>
-          <Card title="📊 我的知识掌握雷达" bordered={false} style={{ borderRadius: 12 }}>
-            <ReactECharts option={studentRadarOption} style={{ height: 260 }} />
+    <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      <Col xs={24} lg={10}>
+        <Card title="📊 我的知识掌握雷达" bordered={false} style={{ borderRadius: 12 }} extra={<Select style={{ width: 220 }} options={courses.map((course) => ({ value: course.id, label: `${course.name}（${course.code}）` }))} value={selectedCourseId} onChange={(value) => { setSelectedCourseId(value); void loadStudentDashboard(value) }} />}>
+          {studentLoading ? <Skeleton active paragraph={{ rows: 6 }} /> : mastery.length === 0 ? <Empty description="暂无掌握度数据" /> : <ReactECharts option={studentRadarOption} style={{ height: 260 }} />}
+          {mastery.length > 0 && (
             <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Tag color="orange">循环结构 63% 需加强</Tag>
-              <Tag color="red">递归 42% 需加强</Tag>
+              {mastery.map((item) => <Tag key={item.label} color={item.value >= 80 ? 'success' : item.value >= 60 ? 'warning' : 'error'}>{item.label} {item.value}%</Tag>)}
             </div>
-          </Card>
-        </Col>
-        <Col xs={24} lg={14}>
-          <Card title="📝 待提交作业" bordered={false} style={{ borderRadius: 12 }}>
+          )}
+        </Card>
+      </Col>
+      <Col xs={24} lg={14}>
+        <Card title="📝 待提交作业" bordered={false} style={{ borderRadius: 12 }}>
+          {studentLoading ? <Skeleton active paragraph={{ rows: 4 }} /> : (
             <List
-              dataSource={studentTodos}
+              dataSource={studentTodosReal}
+              locale={{ emptyText: <Empty description="当前课程暂无作业" /> }}
               renderItem={item => (
-                <List.Item actions={[<Tag color="red">截止 {item.ddl}</Tag>]}>
+                <List.Item actions={[<Tag color="red">截止 {item.ddl}</Tag>]}> 
                   <List.Item.Meta
                     avatar={<ClockCircleOutlined style={{ fontSize: 24, color: '#faad14', marginTop: 4 }} />}
                     title={item.name}
@@ -273,23 +344,29 @@ export default function Dashboard() {
                 </List.Item>
               )}
             />
-          </Card>
+          )}
+        </Card>
 
-          <Card title="📈 知识点掌握进度" bordered={false} style={{ borderRadius: 12, marginTop: 16 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {knowledgeProgress.map(k => (
-                <div key={k.label}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 13 }}>
-                    <span>{k.label}</span>
-                    <span style={{ color: k.color, fontWeight: 600 }}>{k.val}%</span>
-                  </div>
-                  <Progress percent={k.val} strokeColor={k.color} showInfo={false} size="small" />
-                </div>
-              ))}
-            </div>
-          </Card>
-        </Col>
-      </Row>
-    </div>
-  )
+        <Card title="⚠️ 学习预警" bordered={false} style={{ borderRadius: 12, marginTop: 16 }}>
+          {studentLoading ? <Skeleton active paragraph={{ rows: 4 }} /> : alerts.length === 0 ? <Empty description="暂无预警信息" /> : (
+            <List
+              dataSource={alerts}
+              renderItem={(item) => (
+                <List.Item style={{ padding: '6px 0' }}>
+                  <Alert
+                    type={item.level || 'warning'}
+                    message={item.title || item.student_name || '学习提醒'}
+                    description={item.message || item.content || '暂无详细说明'}
+                    style={{ width: '100%', borderRadius: 8 }}
+                    showIcon
+                  />
+                </List.Item>
+              )}
+            />
+          )}
+        </Card>
+      </Col>
+    </Row>
+  </div>
+)
 }

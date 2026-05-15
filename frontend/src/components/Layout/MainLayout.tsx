@@ -29,6 +29,7 @@ const teacherMenuItems = [
 
 const studentMenuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
+  { key: '/courses', icon: <BookOutlined />, label: '我的课程' },
   { key: '/chat', icon: <MessageOutlined />, label: '智能答疑' },
   { key: '/assignments', icon: <FileTextOutlined />, label: '我的作业' },
   { key: '/exercises', icon: <EditOutlined />, label: '练习中心' },

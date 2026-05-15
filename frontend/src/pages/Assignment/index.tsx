@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Avatar, Button, Card, Col, Empty, Form, Input, message, Modal, Row,
+  Alert, Avatar, Button, Card, Col, Empty, Form, Input, message, Modal, Row,
   Select, Space, Table, Tabs, Tag, Typography, Upload,
 } from 'antd'
 import {
@@ -49,6 +49,7 @@ export default function Assignment() {
   const [selectedAssignment, setSelectedAssignment] = useState<AssignmentItem | null>(null)
   const [studentDetail, setStudentDetail] = useState<AssignmentItem | null>(null)
   const [submissions, setSubmissions] = useState<Submission[]>([])
+  const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null)
   const [loading, setLoading] = useState(false)
   const [submissionsLoading, setSubmissionsLoading] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -108,6 +109,11 @@ export default function Assignment() {
     await loadSubmissions(assignment.id)
   }
 
+  const handleTeacherAIClick = async (assignment: AssignmentItem) => {
+    message.info('当前作业在学生提交后会自动进入 AI 批改流程，可在提交列表中查看批改进度。')
+    await openTeacherDetail(assignment)
+  }
+
   const createAssignment = async (values: any) => {
     setLoading(true)
     try {
@@ -146,9 +152,13 @@ export default function Assignment() {
     try {
       const { data } = await assignmentAPI.submit(submitOpen.id, submitMode === 'code' ? codeContent : undefined, submitMode === 'file' ? submitFile : undefined)
       message.success(data?.message || '提交成功，正在批改中')
+      const submissionId = data?.id
       setSubmitOpen(null)
       setCodeContent('')
       setSubmitFile(undefined)
+      if (submissionId) {
+        navigate(`/grading/${submissionId}`)
+      }
     } catch (error: any) {
       message.error(error?.response?.data?.detail || '提交失败')
     } finally {
@@ -179,6 +189,7 @@ export default function Assignment() {
         <Tag color="blue">{selectedAssignment.courseName}</Tag>
       </Space>
       <Card title="作业详情" style={{ marginBottom: 16 }}>{detailContent(selectedAssignment)}</Card>
+      <Alert type="info" showIcon style={{ marginBottom: 16 }} message="学生提交后会自动触发 AI 批改，可在下方列表查看批改进度与结果入口。" />
       <Table
         loading={submissionsLoading}
         dataSource={submissions}
@@ -189,9 +200,52 @@ export default function Assignment() {
           { title: '提交时间', dataIndex: 'submitted_at', render: (v?: string) => v ? new Date(v).toLocaleString() : '-' },
           { title: '提交方式', render: (_: unknown, row: Submission) => row.file_path ? <Tag>文件</Tag> : <Tag>文本</Tag> },
           { title: '批改状态', dataIndex: 'status', render: statusTag },
-          { title: '操作', render: (_: unknown, row: Submission) => <Button size="small" icon={<EyeOutlined />} onClick={() => navigate(`/grading/${row.id}`)}>查看批改</Button> },
+          {
+            title: '操作',
+            render: (_: unknown, row: Submission) => (
+              <Space>
+                <Button size="small" onClick={() => setSelectedSubmission(row)}>查看内容</Button>
+                <Button size="small" icon={<EyeOutlined />} onClick={() => navigate(`/grading/${row.id}`)}>查看批改</Button>
+              </Space>
+            ),
+          },
         ]}
       />
+
+      <Modal
+        title="学生提交内容"
+        open={selectedSubmission !== null}
+        onCancel={() => setSelectedSubmission(null)}
+        footer={<Button type="primary" onClick={() => setSelectedSubmission(null)}>关闭</Button>}
+        width={760}
+      >
+        {selectedSubmission && (
+          <Space direction="vertical" size={14} style={{ width: '100%' }}>
+            <Row gutter={[16, 12]}>
+              <Col span={12}><Typography.Text type="secondary">提交ID</Typography.Text><div>{selectedSubmission.id}</div></Col>
+              <Col span={12}><Typography.Text type="secondary">学生ID</Typography.Text><div>{selectedSubmission.student_id}</div></Col>
+              <Col span={12}><Typography.Text type="secondary">提交时间</Typography.Text><div>{selectedSubmission.submitted_at ? new Date(selectedSubmission.submitted_at).toLocaleString() : '-'}</div></Col>
+              <Col span={12}><Typography.Text type="secondary">批改状态</Typography.Text><div>{statusTag(selectedSubmission.status)}</div></Col>
+            </Row>
+            <div>
+              <Typography.Text type="secondary">文本内容</Typography.Text>
+              <Card size="small" style={{ marginTop: 6, background: '#fafafa' }}>
+                <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
+                  {selectedSubmission.content?.trim() || '该提交未填写文本内容'}
+                </Typography.Paragraph>
+              </Card>
+            </div>
+            <div>
+              <Typography.Text type="secondary">附件路径</Typography.Text>
+              <Card size="small" style={{ marginTop: 6, background: '#fafafa' }}>
+                <Typography.Paragraph style={{ marginBottom: 0, wordBreak: 'break-all' }}>
+                  {selectedSubmission.file_path || '该提交未上传附件'}
+                </Typography.Paragraph>
+              </Card>
+            </div>
+          </Space>
+        )}
+      </Modal>
     </div>
   }
 
@@ -203,7 +257,7 @@ export default function Assignment() {
     {
       title: '操作',
       render: (_: unknown, row: AssignmentItem) => isTeacher ? (
-        <Space><Button size="small" onClick={() => openTeacherDetail(row)}>查看提交</Button><Button size="small" icon={<RobotOutlined />} type="primary" ghost>AI批改</Button></Space>
+        <Space><Button size="small" onClick={() => openTeacherDetail(row)}>查看提交</Button><Button size="small" icon={<RobotOutlined />} type="primary" ghost onClick={() => void handleTeacherAIClick(row)}>查看批改进度</Button></Space>
       ) : (
         <Space><Button size="small" icon={<EyeOutlined />} onClick={() => setStudentDetail(row)}>查看详情</Button><Button size="small" type="primary" icon={<SendOutlined />} onClick={() => setSubmitOpen(row)}>提交作业</Button></Space>
       ),
@@ -240,7 +294,7 @@ export default function Assignment() {
     <Modal title="提交作业" open={submitOpen !== null} onCancel={() => setSubmitOpen(null)} onOk={submitAssignment} okText="提交" confirmLoading={submitting} width={640}>
       <Tabs activeKey={submitMode} onChange={(key) => setSubmitMode(key as 'code' | 'file')} items={[
         { key: 'code', label: <span><CodeOutlined /> 在线编辑器</span>, children: <Input.TextArea value={codeContent} onChange={(e) => setCodeContent(e.target.value)} rows={12} placeholder="在此输入代码或文字内容..." style={{ fontFamily: 'monospace' }} /> },
-        { key: 'file', label: <span><UploadOutlined /> 上传文件</span>, children: <Upload.Dragger accept=".py,.pdf,.doc,.docx" maxCount={1} beforeUpload={(file) => { setSubmitFile(file); return false }} onRemove={() => setSubmitFile(undefined)}><p style={{ fontSize: 24 }}><UploadOutlined /></p><p>点击或拖拽上传 .py / .pdf / .docx</p></Upload.Dragger> },
+        { key: 'file', label: <span><UploadOutlined /> 上传文件</span>, children: <Upload.Dragger accept=".py,.txt,.md,.pdf,.docx,.pptx,.xlsx,.csv,.json" maxCount={1} beforeUpload={(file) => { setSubmitFile(file); return false }} onRemove={() => setSubmitFile(undefined)}><p style={{ fontSize: 24 }}><UploadOutlined /></p><p>点击或拖拽上传 .py / .txt / .md / .pdf / .docx / .pptx / .xlsx / .csv / .json</p></Upload.Dragger> },
       ]} />
     </Modal>
   </div>
