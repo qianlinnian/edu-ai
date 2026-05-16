@@ -20,6 +20,11 @@ class AttemptEvaluation:
     feedback: str
 
 
+DEFAULT_INITIAL_MASTERY = 0.5
+EMA_HISTORY_WEIGHT = 0.7
+EMA_LATEST_WEIGHT = 0.3
+
+
 def _normalize_text(value: str | None) -> str:
     if not value:
         return ""
@@ -140,7 +145,7 @@ async def _update_mastery(
         return
 
     now = datetime.now(timezone.utc)
-    score_ratio = min(max(score / 100.0, 0.0), 1.0)
+    score_ratio = normalize_score_ratio(score)
 
     for kp_id in knowledge_point_ids:
         result = await db.execute(
@@ -154,19 +159,45 @@ async def _update_mastery(
             mastery = StudentKnowledgeMastery(
                 student_id=student_id,
                 knowledge_unit_id=kp_id,
-                mastery_score=0.5,
+                mastery_score=DEFAULT_INITIAL_MASTERY,
                 attempt_count=0,
                 correct_count=0,
             )
             db.add(mastery)
             await db.flush()
 
-        mastery.attempt_count += 1
-        mastery.correct_count += 1 if is_correct else 0
-        outcome = score_ratio if is_correct else max(score_ratio * 0.5, 0.0)
-        # EMA smoothing keeps history and latest attempt balanced.
-        mastery.mastery_score = round(min(max(mastery.mastery_score * 0.7 + outcome * 0.3, 0.0), 1.0), 4)
-        mastery.last_assessed_at = now
+        apply_mastery_update(mastery, score_ratio=score_ratio, is_correct=is_correct, assessed_at=now)
+
+
+def normalize_score_ratio(score: float) -> float:
+    return min(max(score / 100.0, 0.0), 1.0)
+
+
+def derive_mastery_outcome(*, score_ratio: float, is_correct: bool) -> float:
+    if is_correct:
+        return score_ratio
+    return max(score_ratio * 0.5, 0.0)
+
+
+def blend_mastery_score(*, previous_mastery: float, outcome: float) -> float:
+    return round(
+        min(max(previous_mastery * EMA_HISTORY_WEIGHT + outcome * EMA_LATEST_WEIGHT, 0.0), 1.0),
+        4,
+    )
+
+
+def apply_mastery_update(
+    mastery: StudentKnowledgeMastery,
+    *,
+    score_ratio: float,
+    is_correct: bool,
+    assessed_at: datetime,
+) -> None:
+    mastery.attempt_count += 1
+    mastery.correct_count += 1 if is_correct else 0
+    outcome = derive_mastery_outcome(score_ratio=score_ratio, is_correct=is_correct)
+    mastery.mastery_score = blend_mastery_score(previous_mastery=mastery.mastery_score, outcome=outcome)
+    mastery.last_assessed_at = assessed_at
 
 
 async def generate_targeted_exercises(
