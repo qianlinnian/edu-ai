@@ -1,14 +1,34 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Card, Row, Col, Button, Modal, Form, Input, Tabs, Table, Tag,
-  Upload, Tree, Avatar, message, Typography, Space, Badge, Empty, Alert,
+  Alert,
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  Col,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Row,
+  Space,
+  Table,
+  Tabs,
+  Tag,
+  Typography,
+  Upload,
+  message,
 } from 'antd'
 import {
-  PlusOutlined, UploadOutlined, FilePdfOutlined, FileWordOutlined,
-  FilePptOutlined, BookOutlined, TeamOutlined,
-  LoadingOutlined, UserOutlined,
+  BookOutlined,
+  DownloadOutlined,
+  FilePdfOutlined,
+  FilePptOutlined,
+  FileWordOutlined,
+  LoadingOutlined,
+  PlusOutlined,
+  UploadOutlined,
 } from '@ant-design/icons'
-import type { DataNode } from 'antd/es/tree'
 import { courseAPI } from '../../services/api'
 import { useAuthStore } from '../../hooks/useAuthStore'
 
@@ -23,6 +43,7 @@ interface CourseItem {
 
 interface ResourceItem {
   id: number
+  course_id: number
   name: string
   file_type?: string
   file_size?: number
@@ -33,45 +54,13 @@ interface ResourceItem {
   created_at?: string
 }
 
-const MOCK_KNOWLEDGE_TREE: DataNode[] = [
-  {
-    title: '基础语法', key: '1',
-    children: [
-      { title: '变量与类型', key: '1-1' },
-      { title: '运算符', key: '1-2' },
-      { title: '输入输出', key: '1-3' },
-    ],
-  },
-  {
-    title: '流程控制', key: '2',
-    children: [
-      { title: '条件判断', key: '2-1' },
-      { title: '循环结构', key: '2-2' },
-    ],
-  },
-  {
-    title: '函数', key: '3',
-    children: [
-      { title: '函数定义', key: '3-1' },
-      { title: '参数传递', key: '3-2' },
-      { title: '递归', key: '3-3' },
-    ],
-  },
-]
-
-const MOCK_STUDENTS = [
-  { id: 1, name: '张三', email: 'zhangsan@example.com', score: 85 },
-  { id: 2, name: '李四', email: 'lisi@example.com', score: 72 },
-  { id: 3, name: '王五', email: 'wangwu@example.com', score: 58 },
-]
-
-const colorPalette = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#14b8a6']
+const colorPalette = ['#2563eb', '#0891b2', '#059669', '#d97706', '#7c3aed', '#dc2626']
 
 const fileIcon = (type?: string) => {
   const upper = (type ?? '').toUpperCase()
-  if (upper === 'PDF') return <FilePdfOutlined style={{ color: '#ff4d4f', fontSize: 18 }} />
-  if (upper === 'PPT' || upper === 'PPTX') return <FilePptOutlined style={{ color: '#faad14', fontSize: 18 }} />
-  return <FileWordOutlined style={{ color: '#00a8ff', fontSize: 18 }} />
+  if (upper === 'PDF') return <FilePdfOutlined style={{ color: '#ef4444', fontSize: 18 }} />
+  if (upper === 'PPT' || upper === 'PPTX') return <FilePptOutlined style={{ color: '#f59e0b', fontSize: 18 }} />
+  return <FileWordOutlined style={{ color: '#2563eb', fontSize: 18 }} />
 }
 
 const statusTag = (status?: ResourceItem['processing_status']) => {
@@ -81,17 +70,20 @@ const statusTag = (status?: ResourceItem['processing_status']) => {
   return <Tag color="default">待处理</Tag>
 }
 
-const formatProcessingError = (error: string) => {
-  if (!error) return ''
+const formatFileSize = (value?: number) => {
+  if (!value) return '-'
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / 1024 / 1024).toFixed(1)} MB`
+}
 
+const formatProcessingError = (error?: string | null) => {
+  if (!error) return '-'
   if (error.includes('batch size is invalid') && error.includes('should not be larger than 10')) {
-    return '向量化处理失败：单批发送给 embedding 接口的文本条数超过上限 10。请检查 EMBEDDING_BATCH_SIZE 配置，并重启后端与 worker 后重试。'
+    return '向量化失败：embedding 单批文本数量超过 10，请检查 EMBEDDING_BATCH_SIZE 后重试。'
   }
-
   if (error.includes('task dispatch failed')) {
-    return '任务派发失败：请确认 Celery worker 和 Redis 已正常启动。'
+    return '任务派发失败：请确认 Celery worker 和 Redis 已启动。'
   }
-
   return error
 }
 
@@ -101,12 +93,13 @@ export default function CourseManage() {
 
   const [courses, setCourses] = useState<CourseItem[]>([])
   const [selectedCourse, setSelectedCourse] = useState<CourseItem | null>(null)
+  const [resources, setResources] = useState<ResourceItem[]>([])
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [loadingCourses, setLoadingCourses] = useState(false)
-  const [uploading, setUploading] = useState(false)
   const [loadingResources, setLoadingResources] = useState(false)
-  const [resources, setResources] = useState<ResourceItem[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [downloadingId, setDownloadingId] = useState<number | null>(null)
   const [form] = Form.useForm()
 
   const courseColorMap = useMemo(() => {
@@ -129,10 +122,6 @@ export default function CourseManage() {
     }
   }
 
-  useEffect(() => {
-    void loadCourses()
-  }, [])
-
   const loadResources = async (courseId: number) => {
     setLoadingResources(true)
     try {
@@ -140,11 +129,15 @@ export default function CourseManage() {
       setResources(data)
     } catch (error: any) {
       setResources([])
-      message.error(error?.response?.data?.detail || '资源列表加载失败，请检查后端课程资源接口。')
+      message.error(error?.response?.data?.detail || '资源列表加载失败')
     } finally {
       setLoadingResources(false)
     }
   }
+
+  useEffect(() => {
+    void loadCourses()
+  }, [])
 
   useEffect(() => {
     if (!selectedCourse) {
@@ -191,12 +184,12 @@ export default function CourseManage() {
     setUploading(true)
     try {
       const { data } = await courseAPI.uploadResource(selectedCourse.id, file)
-      message.success(data.message || '上传成功，正在处理中')
+      message.success(data.message || '上传成功，正在处理')
       await loadResources(selectedCourse.id)
     } catch (error: any) {
       const detail = error?.response?.data?.detail || '上传失败'
       const hint = String(detail).includes('task dispatch failed')
-        ? '上传成功但任务派发失败，请确认 Celery Worker 与 Redis 已启动。'
+        ? '上传成功但任务派发失败，请确认 Celery worker 和 Redis 已启动。'
         : detail
       message.error(hint)
     } finally {
@@ -205,236 +198,278 @@ export default function CourseManage() {
     return false
   }
 
-  if (!isTeacher) {
-    return (
-      <div>
-        <div style={{ marginBottom: 24, fontSize: 20, fontWeight: 700 }}>我的课程</div>
-        <Row gutter={[16, 16]}>
-          {courses.map((course) => {
-            const color = courseColorMap.get(course.id) ?? '#3b82f6'
-            return (
-              <Col key={course.id} xs={24} sm={12} lg={8}>
-                <Card hoverable style={{ borderRadius: 14, overflow: 'hidden' }} styles={{ body: { padding: 0 } }}>
-                  <div style={{ height: 6, background: color }} />
-                  <div style={{ padding: 20 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-                      <Avatar size={44} style={{ background: color, fontWeight: 700 }}>{course.name[0]}</Avatar>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: 16 }}>{course.name}</div>
-                        <div style={{ color: '#999', fontSize: 12 }}>{course.description || course.domain}</div>
-                      </div>
-                    </div>
-                    <div style={{ color: '#888', fontSize: 13 }}>
-                      <BookOutlined style={{ marginRight: 4 }} />课程代码：{course.code}
-                    </div>
-                  </div>
-                </Card>
-              </Col>
-            )
-          })}
-        </Row>
-      </div>
-    )
+  const handleDownload = async (resource: ResourceItem) => {
+    if (!selectedCourse) return
+
+    setDownloadingId(resource.id)
+    try {
+      const { data } = await courseAPI.downloadResource(selectedCourse.id, resource.id)
+      const url = URL.createObjectURL(data)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = resource.name
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (error: any) {
+      message.error(error?.response?.data?.detail || '下载失败')
+    } finally {
+      setDownloadingId(null)
+    }
   }
 
+  const resourceColumns = [
+    {
+      title: '文件名',
+      dataIndex: 'name',
+      render: (name: string, row: ResourceItem) => (
+        <Space>
+          {fileIcon(row.file_type)}
+          <span>{name}</span>
+        </Space>
+      ),
+    },
+    {
+      title: '类型',
+      dataIndex: 'file_type',
+      render: (type: string) => <Tag>{(type || 'unknown').toUpperCase()}</Tag>,
+    },
+    {
+      title: '大小',
+      dataIndex: 'file_size',
+      render: (size: number) => formatFileSize(size),
+    },
+    {
+      title: '状态',
+      dataIndex: 'processing_status',
+      render: (status: ResourceItem['processing_status']) => statusTag(status),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_: unknown, row: ResourceItem) => (
+        <Button
+          icon={<DownloadOutlined />}
+          size="small"
+          loading={downloadingId === row.id}
+          onClick={() => void handleDownload(row)}
+        >
+          下载
+        </Button>
+      ),
+    },
+  ]
+
+  const teacherResourceColumns = [
+    ...resourceColumns.slice(0, 4),
+    {
+      title: '错误信息',
+      dataIndex: 'processing_error',
+      render: (error?: string | null) => (
+        error ? <Typography.Text type="danger">{formatProcessingError(error)}</Typography.Text> : '-'
+      ),
+    },
+    resourceColumns[4],
+  ]
+
+  const renderCourseCards = () => (
+    <Row gutter={[16, 16]}>
+      {courses.map((course) => {
+        const color = courseColorMap.get(course.id) ?? '#2563eb'
+        return (
+          <Col key={course.id} xs={24} sm={12} lg={8}>
+            <Card
+              hoverable
+              onClick={() => setSelectedCourse(course)}
+              style={{
+                borderRadius: 16,
+                border: '1px solid #e5edf7',
+                boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+                overflow: 'hidden',
+              }}
+              styles={{ body: { padding: 20 } }}
+            >
+              <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                <Avatar size={48} style={{ background: color, fontWeight: 700, flexShrink: 0 }}>
+                  {course.name[0]}
+                </Avatar>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <Typography.Text strong style={{ fontSize: 16 }} ellipsis>{course.name}</Typography.Text>
+                    <Tag color="blue">{course.code}</Tag>
+                  </div>
+                  <Typography.Paragraph
+                    type="secondary"
+                    ellipsis={{ rows: 2 }}
+                    style={{ marginBottom: 14, minHeight: 44 }}
+                  >
+                    {course.description || course.domain}
+                  </Typography.Paragraph>
+                  <Space size={10} wrap>
+                    <Tag>{course.domain}</Tag>
+                    <Badge status="processing" text={<span style={{ fontSize: 12 }}>可查看资料</span>} />
+                  </Space>
+                </div>
+              </div>
+            </Card>
+          </Col>
+        )
+      })}
+
+      {isTeacher && (
+        <Col xs={24} sm={12} lg={8}>
+          <Card
+            hoverable
+            onClick={() => setCreateOpen(true)}
+            style={{
+              borderRadius: 16,
+              border: '2px dashed #cbd5e1',
+              minHeight: 156,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            styles={{ body: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 } }}
+          >
+            <PlusOutlined style={{ fontSize: 28, color: '#94a3b8' }} />
+            <span style={{ color: '#64748b' }}>创建新课程</span>
+          </Card>
+        </Col>
+      )}
+    </Row>
+  )
+
   if (selectedCourse) {
-    const courseColor = courseColorMap.get(selectedCourse.id) ?? '#3b82f6'
+    const courseColor = courseColorMap.get(selectedCourse.id) ?? '#2563eb'
 
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-          <Button onClick={() => setSelectedCourse(null)}>← 返回</Button>
-          <div
-            style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: courseColor,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#fff', fontWeight: 700, fontSize: 16,
-            }}
-          >
+          <Button onClick={() => setSelectedCourse(null)}>返回</Button>
+          <Avatar shape="square" size={40} style={{ background: courseColor, fontWeight: 700 }}>
             {selectedCourse.name[0]}
+          </Avatar>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{selectedCourse.name}</div>
+            <Space size={6}>
+              <Tag color="blue">{selectedCourse.code}</Tag>
+              <Tag>{selectedCourse.domain}</Tag>
+            </Space>
           </div>
-          <span style={{ fontSize: 20, fontWeight: 700 }}>{selectedCourse.name}</span>
-          <Tag color="blue">{selectedCourse.code}</Tag>
-          <Tag>{selectedCourse.domain}</Tag>
         </div>
 
-        <Tabs
-          items={[
-            {
-              key: 'resources',
-              label: '📁 课件管理',
-              children: (
-                <div>
-                  <Upload.Dragger
-                    accept=".pdf,.doc,.docx,.ppt,.pptx"
-                    beforeUpload={handleUpload}
-                    showUploadList={false}
-                    disabled={uploading}
-                    style={{ marginBottom: 16, borderRadius: 10 }}
-                  >
-                    <p style={{ fontSize: 28 }}><UploadOutlined /></p>
-                    <p style={{ fontWeight: 500 }}>{uploading ? '上传中...' : '拖拽上传 PDF / Word / PPT'}</p>
-                    <p style={{ color: '#999', fontSize: 12 }}>上传后由后端异步处理并构建课程知识库</p>
-                  </Upload.Dragger>
+        {isTeacher ? (
+          <Tabs
+            items={[
+              {
+                key: 'resources',
+                label: '课件管理',
+                children: (
+                  <div>
+                    <Upload.Dragger
+                      accept=".pdf,.docx,.ppt,.pptx,.xlsx"
+                      beforeUpload={handleUpload}
+                      showUploadList={false}
+                      disabled={uploading}
+                      style={{ marginBottom: 16, borderRadius: 12 }}
+                    >
+                      <p style={{ fontSize: 28 }}><UploadOutlined /></p>
+                      <p style={{ fontWeight: 600 }}>{uploading ? '上传中...' : '拖拽上传 PDF / Word / PPT / Excel'}</p>
+                      <p style={{ color: '#999', fontSize: 12 }}>上传后由后端异步处理并构建课程知识库</p>
+                    </Upload.Dragger>
 
-                  {resources.length === 0 ? (
-                    <Empty description={loadingResources ? '资源列表加载中...' : '暂无资源记录'} />
-                  ) : (
                     <Table
                       dataSource={resources}
                       rowKey="id"
+                      loading={loadingResources}
                       pagination={false}
-                      columns={[
-                        {
-                          title: '文件名', dataIndex: 'name',
-                          render: (name: string, row: ResourceItem) => <Space>{fileIcon(row.file_type)}<span>{name}</span></Space>,
-                        },
-                        { title: '类型', dataIndex: 'file_type', render: (type: string) => <Tag>{(type || '未知').toUpperCase()}</Tag> },
-                        { title: '状态', dataIndex: 'processing_status', render: (status: ResourceItem['processing_status']) => statusTag(status) },
-                        {
-                          title: '错误信息',
-                          dataIndex: 'processing_error',
-                          render: (error?: string | null) => error ? <Typography.Text type="danger">{formatProcessingError(error)}</Typography.Text> : '-',
-                        },
-                      ]}
+                      columns={teacherResourceColumns}
+                      locale={{ emptyText: '暂无课程资料' }}
                     />
-                  )}
-                </div>
-              ),
-            },
-            {
-              key: 'knowledge',
-              label: '🌳 知识点',
-              children: (
-                <div style={{ display: 'flex', gap: 32 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ marginBottom: 12, fontWeight: 600 }}>知识点树</div>
-                    <Tree treeData={MOCK_KNOWLEDGE_TREE} defaultExpandAll showLine={{ showLeafIcon: false }} />
                   </div>
-                  <div style={{ width: 220 }}>
-                    <Alert type="warning" showIcon message="M2阶段知识点管理非主线" description="当前先聚焦课程资料上传与问答闭环，知识点CRUD可在后续阶段接入。" />
-                  </div>
-                </div>
-              ),
-            },
-            {
-              key: 'students',
-              label: '👥 学生名单',
-              children: (
-                <Table
-                  dataSource={MOCK_STUDENTS}
-                  rowKey="id"
-                  columns={[
-                    {
-                      title: '学生', dataIndex: 'name',
-                      render: (name: string) => <Space><Avatar size="small" icon={<UserOutlined />} />{name}</Space>,
-                    },
-                    { title: '邮箱', dataIndex: 'email' },
-                    {
-                      title: '平均分', dataIndex: 'score',
-                      render: (score: number) => {
-                        const color = score >= 80 ? '#52c41a' : score >= 60 ? '#faad14' : '#ff4d4f'
-                        return <span style={{ color, fontWeight: 600 }}>{score}</span>
-                      },
-                    },
-                  ]}
-                />
-              ),
-            },
-            {
-              key: 'info',
-              label: '📋 课程信息',
-              children: (
-                <Card style={{ maxWidth: 520 }}>
-                  <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                    <div><strong>课程名称：</strong>{selectedCourse.name}</div>
-                    <div><strong>课程代码：</strong>{selectedCourse.code}</div>
-                    <div><strong>所属领域：</strong>{selectedCourse.domain}</div>
-                    <div><strong>课程描述：</strong>{selectedCourse.description || '暂无描述'}</div>
-                  </Space>
-                </Card>
-              ),
-            },
-          ]}
-        />
+                ),
+              },
+              {
+                key: 'knowledge',
+                label: '知识点',
+                children: (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="知识点自动生成/树状展示后续接入"
+                    description="当前主链路优先完成资料上传、知识入库、RAG 问答和作业批改闭环。"
+                  />
+                ),
+              },
+              {
+                key: 'students',
+                label: '学生名单',
+                children: (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="学生名单接口后续接入"
+                    description="后端目前已有 enroll 数据表，仍需要补充课程学生列表接口和前端真实数据展示。"
+                  />
+                ),
+              },
+              {
+                key: 'info',
+                label: '课程信息',
+                children: (
+                  <Card style={{ maxWidth: 560 }}>
+                    <Space direction="vertical" size={10}>
+                      <div><strong>课程名称：</strong>{selectedCourse.name}</div>
+                      <div><strong>课程代码：</strong>{selectedCourse.code}</div>
+                      <div><strong>所属领域：</strong>{selectedCourse.domain}</div>
+                      <div><strong>课程描述：</strong>{selectedCourse.description || '暂无描述'}</div>
+                    </Space>
+                  </Card>
+                ),
+              },
+            ]}
+          />
+        ) : (
+          <Card
+            title="课程资料"
+            extra={<Button size="small" onClick={() => void loadResources(selectedCourse.id)}>刷新</Button>}
+            style={{ borderRadius: 16 }}
+          >
+            <Table
+              dataSource={resources.filter((item) => item.processing_status === 'processed' || item.is_processed)}
+              rowKey="id"
+              loading={loadingResources}
+              pagination={false}
+              columns={resourceColumns}
+              locale={{ emptyText: '当前课程暂无可下载资料' }}
+            />
+          </Card>
+        )}
       </div>
     )
   }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <span style={{ fontSize: 20, fontWeight: 700 }}>课程管理</span>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)} style={{ borderRadius: 8 }}>
-          创建课程
-        </Button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>{isTeacher ? '课程管理' : '我的课程'}</div>
+          <div style={{ color: '#64748b', marginTop: 4 }}>
+            {isTeacher ? '管理课程资料、知识库和课程配置。' : '查看已开放课程资料。'}
+          </div>
+        </div>
+        {isTeacher && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)} style={{ borderRadius: 8 }}>
+            创建课程
+          </Button>
+        )}
       </div>
 
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16, borderRadius: 10 }}
-        message="M2 使用说明"
-        description="课程管理首页默认展示全部课程。点击课程卡片后才进入该课程的课件管理页面。"
-      />
-
       {courses.length === 0 && !loadingCourses ? (
-        <Empty description="暂无课程，请先创建一门课程用于上传资料和问答演示" />
+        <Empty description={isTeacher ? '暂无课程，请先创建课程。' : '暂无课程。'} />
       ) : (
-        <Row gutter={[16, 16]}>
-          {courses.map((course) => {
-            const color = courseColorMap.get(course.id) ?? '#3b82f6'
-            return (
-              <Col key={course.id} xs={24} sm={12} lg={8}>
-                <Card
-                  hoverable
-                  style={{ borderRadius: 14, overflow: 'hidden', border: '1px solid #f0f0f0', cursor: 'pointer' }}
-                  styles={{ body: { padding: 0 } }}
-                  onClick={() => setSelectedCourse(course)}
-                >
-                  <div style={{ height: 6, background: color }} />
-                  <div style={{ padding: 20 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                      <Avatar size={48} style={{ background: color, fontSize: 20, fontWeight: 700, flexShrink: 0 }}>
-                        {course.name[0]}
-                      </Avatar>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>{course.name}</div>
-                        <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
-                          {course.description || course.domain}
-                        </Typography.Text>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 16, color: '#888', fontSize: 13, borderTop: '1px solid #f5f5f5', paddingTop: 12 }}>
-                      <span><BookOutlined style={{ marginRight: 4 }} />{course.code}</span>
-                      <span>{course.domain}</span>
-                      <span style={{ marginLeft: 'auto' }}>
-                        <Badge status="processing" text={<span style={{ fontSize: 12 }}>可上传资料</span>} />
-                      </span>
-                    </div>
-                  </div>
-                </Card>
-              </Col>
-            )
-          })}
-
-          <Col xs={24} sm={12} lg={8}>
-            <Card
-              hoverable
-              onClick={() => setCreateOpen(true)}
-              style={{
-                borderRadius: 14, border: '2px dashed #d9d9d9',
-                minHeight: 148, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-              styles={{ body: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 } }}
-            >
-              <PlusOutlined style={{ fontSize: 28, color: '#bbb' }} />
-              <span style={{ color: '#bbb', fontSize: 14 }}>创建新课程</span>
-            </Card>
-          </Col>
-        </Row>
+        renderCourseCards()
       )}
 
       <Modal
@@ -447,13 +482,13 @@ export default function CourseManage() {
       >
         <Form form={form} layout="vertical" onFinish={handleCreate} style={{ marginTop: 16 }}>
           <Form.Item name="name" label="课程名称" rules={[{ required: true, message: '请输入课程名称' }]}>
-            <Input placeholder="如：面向对象程序设计（Java）" />
+            <Input placeholder="例如：数据结构" />
           </Form.Item>
           <Form.Item name="code" label="课程代码" rules={[{ required: true, message: '请输入课程代码' }]}>
-            <Input placeholder="如：CS101" />
+            <Input placeholder="例如：CS102" />
           </Form.Item>
           <Form.Item name="domain" label="课程领域" rules={[{ required: true, message: '请输入课程领域' }]}>
-            <Input placeholder="如：计算机科学" />
+            <Input placeholder="例如：计算机科学" />
           </Form.Item>
           <Form.Item name="description" label="课程描述">
             <Input.TextArea rows={3} placeholder="课程简介" />

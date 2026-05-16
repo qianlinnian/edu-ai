@@ -2,20 +2,24 @@ from __future__ import annotations
 
 from datetime import datetime
 from uuid import uuid4
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from core.security import get_current_user
-from core.storage import remove_object, upload_bytes
+from core.storage import remove_object, get_minio_client, upload_bytes
 from models.course import Course, CourseResource, Enrollment, KnowledgeUnit, ResourceChunk
+from core.config import get_settings
 from models.user import User
 from workers.embedding_task import process_resource
 
 router = APIRouter()
+settings = get_settings()
 
 
 class CourseCreate(BaseModel):
@@ -135,6 +139,44 @@ async def list_resources(course_id: int, db: AsyncSession = Depends(get_db), use
         select(CourseResource).where(CourseResource.course_id == course_id).order_by(CourseResource.created_at.desc())
     )
     return result.scalars().all()
+
+
+@router.get("/{course_id}/resources/{resource_id}/download")
+async def download_resource(
+    course_id: int,
+    resource_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    resource_result = await db.execute(
+        select(CourseResource).where(
+            CourseResource.id == resource_id,
+            CourseResource.course_id == course_id,
+        )
+    )
+    resource = resource_result.scalar_one_or_none()
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found")
+
+    client = get_minio_client()
+    response = None
+    try:
+        response = client.get_object(settings.MINIO_BUCKET, resource.file_path)
+        payload = response.read()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to download resource: {exc}") from exc
+    finally:
+        if response is not None:
+            try:
+                response.close()
+                response.release_conn()
+            except Exception:
+                pass
+
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(resource.name)}"
+    }
+    return StreamingResponse(iter([payload]), media_type="application/octet-stream", headers=headers)
 
 
 @router.post("/{course_id}/resources")

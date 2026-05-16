@@ -48,6 +48,8 @@ export const courseAPI = {
   get: (id: number) => api.get(`/courses/${id}`),
   create: (data: any) => api.post('/courses', data),
   listResources: (courseId: number) => api.get(`/courses/${courseId}/resources`),
+  downloadResource: (courseId: number, resourceId: number) =>
+    api.get(`/courses/${courseId}/resources/${resourceId}/download`, { responseType: 'blob' }),
   uploadResource: (courseId: number, file: File) => {
     const form = new FormData()
     form.append('file', file)
@@ -63,6 +65,7 @@ export const chatAPI = {
     api.post('/chat/send', data),
   listSessions: (courseId?: number) => api.get('/chat/sessions', { params: { course_id: courseId } }),
   getMessages: (sessionId: number) => api.get(`/chat/sessions/${sessionId}/messages`),
+  deleteSession: (sessionId: number) => api.delete(`/chat/sessions/${sessionId}`),
 }
 
 // ===== Assignment API =====
