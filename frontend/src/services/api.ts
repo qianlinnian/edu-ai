@@ -19,7 +19,8 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const requestPath = error.config?.url || ''
+    if (error.response?.status === 401 && !requestPath.includes('/auth/login')) {
       useAuthStore.getState().logout()
       window.location.href = '/login'
     }
@@ -47,6 +48,8 @@ export const courseAPI = {
   list: () => api.get('/courses'),
   get: (id: number) => api.get(`/courses/${id}`),
   create: (data: any) => api.post('/courses', data),
+  update: (id: number, data: any) => api.put(`/courses/${id}`, data),
+  remove: (id: number) => api.delete(`/courses/${id}`),
   listResources: (courseId: number) => api.get(`/courses/${courseId}/resources`),
   downloadResource: (courseId: number, resourceId: number) =>
     api.get(`/courses/${courseId}/resources/${resourceId}/download`, { responseType: 'blob' }),
@@ -55,10 +58,11 @@ export const courseAPI = {
     form.append('file', file)
     return api.post(`/courses/${courseId}/resources`, form)
   },
+  deleteResource: (courseId: number, resourceId: number) => api.delete(`/courses/${courseId}/resources/${resourceId}`),
   listKnowledgeUnits: (courseId: number) => api.get(`/courses/${courseId}/knowledge-units`),
   createKnowledgeUnit: (courseId: number, data: any) => api.post(`/courses/${courseId}/knowledge-units`, data),
+  generateKnowledgeUnits: (courseId: number) => api.post(`/courses/${courseId}/knowledge-units/generate`),
 }
-
 // ===== Chat API =====
 export const chatAPI = {
   send: (data: { agent_id: number; course_id: number; session_id?: number; message: string }) =>
@@ -72,6 +76,7 @@ export const chatAPI = {
 export const assignmentAPI = {
   list: (courseId: number) => api.get('/assignments', { params: { course_id: courseId } }),
   create: (data: any) => api.post('/assignments', data),
+  listSubmissions: (assignmentId: number) => api.get(`/assignments/${assignmentId}/submissions`),
   submit: (assignmentId: number, content?: string, file?: File) => {
     const form = new FormData()
     if (content) form.append('content', content)
