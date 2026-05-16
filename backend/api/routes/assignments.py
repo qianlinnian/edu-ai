@@ -179,7 +179,10 @@ async def submit_assignment(
     if not content and not file:
         raise HTTPException(status_code=400, detail="Submission content cannot be empty")
 
-    assignment, _course = await _get_course_for_assignment(db, assignment_id)
+    assignment, course = await _get_course_for_assignment(db, assignment_id)
+    await _ensure_course_access(db, course=course, user=user)
+    if user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Only students can submit assignments")
 
     file_path = None
     if file:
@@ -208,8 +211,10 @@ async def submit_assignment(
     try:
         db.add(submission)
         await db.flush()
+        await db.commit()
         await db.refresh(submission)
     except Exception:
+        await db.rollback()
         if file_path:
             try:
                 remove_object(object_name=file_path)
