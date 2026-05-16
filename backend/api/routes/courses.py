@@ -78,6 +78,14 @@ class CourseResourceResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CourseStudentResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    full_name: str
+    enrolled_at: datetime
+
+
 class KnowledgeGenerateResponse(BaseModel):
     created: int
     items: list[KnowledgeUnitResponse]
@@ -169,6 +177,34 @@ async def enroll_course(course_id: int, db: AsyncSession = Depends(get_db), user
     db.add(enrollment)
     await db.flush()
     return {"message": "enrolled"}
+
+
+@router.get("/{course_id}/students", response_model=list[CourseStudentResponse])
+async def list_course_students(
+    course_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    course = await _get_course_or_404(db, course_id)
+    _ensure_course_manager(course=course, user=user)
+    rows = (
+        await db.execute(
+            select(User, Enrollment.enrolled_at)
+            .join(Enrollment, Enrollment.student_id == User.id)
+            .where(Enrollment.course_id == course_id, User.role == UserRole.STUDENT)
+            .order_by(Enrollment.enrolled_at.desc())
+        )
+    ).all()
+    return [
+        CourseStudentResponse(
+            id=student.id,
+            username=student.username,
+            email=student.email,
+            full_name=student.full_name,
+            enrolled_at=enrolled_at,
+        )
+        for student, enrolled_at in rows
+    ]
 
 
 @router.put("/{course_id}", response_model=CourseResponse)

@@ -59,6 +59,7 @@ export const courseAPI = {
     return api.post(`/courses/${courseId}/resources`, form)
   },
   deleteResource: (courseId: number, resourceId: number) => api.delete(`/courses/${courseId}/resources/${resourceId}`),
+  listStudents: (courseId: number) => api.get(`/courses/${courseId}/students`),
   listKnowledgeUnits: (courseId: number) => api.get(`/courses/${courseId}/knowledge-units`),
   createKnowledgeUnit: (courseId: number, data: any) => api.post(`/courses/${courseId}/knowledge-units`, data),
   generateKnowledgeUnits: (courseId: number) => api.post(`/courses/${courseId}/knowledge-units/generate`),

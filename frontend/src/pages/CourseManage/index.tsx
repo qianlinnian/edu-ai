@@ -67,13 +67,15 @@ type KnowledgeUnit = {
   description?: string | null
 }
 
-const colors = ['#2563eb', '#0891b2', '#059669', '#d97706', '#7c3aed', '#dc2626']
+type CourseStudent = {
+  id: number
+  username: string
+  email: string
+  full_name: string
+  enrolled_at: string
+}
 
-const students = [
-  { id: 1, name: '张三', email: 'zhangsan@example.com', score: 85 },
-  { id: 2, name: '李四', email: 'lisi@example.com', score: 72 },
-  { id: 3, name: '王五', email: 'wangwu@example.com', score: 58 },
-]
+const colors = ['#2563eb', '#0891b2', '#059669', '#d97706', '#7c3aed', '#dc2626']
 
 const fileIcon = (type?: string) => {
   const upper = (type ?? '').toUpperCase()
@@ -114,11 +116,13 @@ export default function CourseManage() {
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null)
   const [resources, setResources] = useState<Resource[]>([])
   const [knowledgeUnits, setKnowledgeUnits] = useState<KnowledgeUnit[]>([])
+  const [students, setStudents] = useState<CourseStudent[]>([])
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [knowledgeOpen, setKnowledgeOpen] = useState(false)
   const [loadingCourses, setLoadingCourses] = useState(false)
   const [loadingResources, setLoadingResources] = useState(false)
+  const [loadingStudents, setLoadingStudents] = useState(false)
   const [savingCourse, setSavingCourse] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [creatingKnowledge, setCreatingKnowledge] = useState(false)
@@ -181,6 +185,19 @@ export default function CourseManage() {
     }
   }
 
+  const loadStudents = async (courseId: number) => {
+    setLoadingStudents(true)
+    try {
+      const { data } = await courseAPI.listStudents(courseId)
+      setStudents(data)
+    } catch (error: any) {
+      setStudents([])
+      message.error(error?.response?.data?.detail || '学生名单加载失败')
+    } finally {
+      setLoadingStudents(false)
+    }
+  }
+
   useEffect(() => {
     void loadCourses()
   }, [])
@@ -189,10 +206,12 @@ export default function CourseManage() {
     if (!selectedCourse) {
       setResources([])
       setKnowledgeUnits([])
+      setStudents([])
       return
     }
     void loadResources(selectedCourse.id)
     void loadKnowledgeUnits(selectedCourse.id)
+    if (isTeacher) void loadStudents(selectedCourse.id)
   }, [selectedCourse?.id])
 
   useEffect(() => {
@@ -595,11 +614,18 @@ export default function CourseManage() {
                 <Table
                   rowKey="id"
                   dataSource={students}
+                  loading={loadingStudents}
                   columns={[
-                    { title: '学生', dataIndex: 'name' },
+                    { title: '学生', dataIndex: 'full_name' },
+                    { title: '用户名', dataIndex: 'username' },
                     { title: '邮箱', dataIndex: 'email' },
-                    { title: '平均分', dataIndex: 'score' },
+                    {
+                      title: '选课时间',
+                      dataIndex: 'enrolled_at',
+                      render: (value: string) => value ? new Date(value).toLocaleString() : '-',
+                    },
                   ]}
+                  locale={{ emptyText: '暂无学生选课记录' }}
                 />
               ),
             },
