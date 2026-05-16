@@ -16,7 +16,6 @@ from models.assignment import Assignment, GradingResult, Submission, SubmissionA
 from models.course import KnowledgeUnit
 from models.learning import LearningAlert, StudentKnowledgeMastery
 from workers.celery_app import celery_app
-from workers.embedding_task import get_minio_client, parse_resource_content
 
 settings = get_settings()
 sync_engine = create_engine(settings.DATABASE_SYNC_URL)
@@ -62,7 +61,7 @@ def _safe_json_loads(raw_text: str) -> dict[str, Any]:
 
     data = json.loads(text)
     if not isinstance(data, dict):
-        raise ValueError("LLM grading response must be a JSON object")
+        raise ValueError("LLM grading output must be a JSON object")
     return data
 
 
@@ -75,23 +74,16 @@ def _normalize_list(value: Any) -> list[str]:
     return [text] if text else []
 
 
-def _normalize_score(value: Any, max_score: float) -> float | None:
+def _normalize_score(value: Any, max_score: float) -> float:
     try:
-        numeric = float(value)
+        if isinstance(value, str):
+            match = re.search(r"-?\d+(?:\.\d+)?", value)
+            score = float(match.group(0)) if match else 0.0
+        else:
+            score = float(value)
     except (TypeError, ValueError):
-        return None
-    return round(min(max(numeric, 0.0), float(max_score)), 2)
-
-
-def _normalize_score_100(value: Any) -> float | None:
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError):
-        return None
-
-    if 0.0 <= numeric <= 1.0:
-        return round(numeric * 100.0, 2)
-    return round(min(max(numeric, 0.0), 100.0), 2)
+        score = 0.0
+    return round(min(max(score, 0.0), float(max_score)), 2)
 
 
 def _file_type_from_path(path: str | None) -> str:
@@ -106,6 +98,8 @@ def _load_submission_file_text(file_path: str | None) -> tuple[str, str | None]:
 
     response = None
     try:
+        from workers.embedding_task import get_minio_client, parse_resource_content
+
         client = get_minio_client()
         response = client.get_object(settings.MINIO_BUCKET, file_path)
         payload = response.read()
@@ -118,8 +112,11 @@ def _load_submission_file_text(file_path: str | None) -> tuple[str, str | None]:
         return "", f"Attachment {file_path} parsing failed: {exc}"
     finally:
         if response is not None:
-            response.close()
-            response.release_conn()
+            try:
+                response.close()
+                response.release_conn()
+            except Exception:
+                pass
 
 
 def _build_grading_content(submission: Submission) -> tuple[str, str]:
@@ -127,191 +124,160 @@ def _build_grading_content(submission: Submission) -> tuple[str, str]:
     warnings: list[str] = []
 
     if submission.content and submission.content.strip():
-        text_parts.append(f"[Text submission]\n{submission.content.strip()}")
+        text_parts.append(f"[文本提交]\n{submission.content.strip()}")
 
     file_text, file_warning = _load_submission_file_text(submission.file_path)
     if file_text:
-        text_parts.append(f"[Parsed attachment]\n{file_text}")
+        text_parts.append(f"[附件解析内容]\n{file_text}")
     if file_warning:
         warnings.append(file_warning)
 
     merged = "\n\n".join(text_parts).strip()
     if len(merged) > MAX_GRADING_CONTENT_CHARS:
-        merged = merged[:MAX_GRADING_CONTENT_CHARS] + "\n\n[Content truncated for automatic grading]"
+        merged = merged[:MAX_GRADING_CONTENT_CHARS] + "\n\n[内容过长，已截断用于自动批改]"
 
     return merged, "\n".join(warnings)
 
 
 def _format_assignment_context(assignment: Assignment) -> str:
-    rubric_text = (
-        json.dumps(assignment.rubric, ensure_ascii=False)
-        if assignment.rubric
-        else "No rubric was provided. Use correctness, completeness, and clarity as grading criteria."
-    )
-    reference_answer = assignment.reference_answer or "No reference answer was provided."
-    knowledge_points = _knowledge_point_ids(assignment.knowledge_points)
+    if assignment.rubric:
+        rubric_text = json.dumps(assignment.rubric, ensure_ascii=False)
+    else:
+        rubric_text = "老师未填写评分标准。默认按正确性 60%、完整性 25%、表达清晰度 15% 进行参考评分。"
+
+    reference_answer = assignment.reference_answer or "老师未提供参考答案，请主要依据作业说明和评分标准进行审慎评分。"
+    knowledge_point_ids = _knowledge_point_ids(assignment.knowledge_points)
     return (
-        f"Assignment title: {assignment.title}\n"
-        f"Assignment description: {assignment.description or 'None'}\n"
-        f"Assignment type: {assignment.assignment_type}\n"
-        f"Max score: {assignment.max_score}\n"
-        f"Knowledge point IDs: {knowledge_points or 'None'}\n"
-        f"Rubric: {rubric_text}\n"
-        f"Reference answer: {reference_answer}"
+        f"作业标题：{assignment.title}\n"
+        f"作业说明：{assignment.description or '无'}\n"
+        f"作业类型：{assignment.assignment_type}\n"
+        f"满分：{assignment.max_score}\n"
+        f"关联知识点 ID：{knowledge_point_ids or '无'}\n"
+        f"作业补充信息：\n"
+        f"- 评分标准：{rubric_text}\n"
+        f"- 参考答案：{reference_answer}"
     )
 
 
-def _overall_score_100(score: float, max_score: float) -> float:
-    if max_score <= 0:
-        return 0.0
-    return round(min(max(score / max_score, 0.0), 1.0) * 100.0, 2)
+def _fallback_knowledge_scores(knowledge_point_ids: list[int], score: float, max_score: float) -> dict[str, float]:
+    if not knowledge_point_ids:
+        return {}
+    ratio = min(max(score / max(max_score, 1.0), 0.0), 1.0)
+    return {str(kp_id): round(ratio * 100, 2) for kp_id in knowledge_point_ids}
 
 
-def _fallback_knowledge_scores(assignment: Assignment, score: float) -> dict[str, float]:
-    score_100 = _overall_score_100(score, float(assignment.max_score))
-    return {str(kp_id): score_100 for kp_id in _knowledge_point_ids(assignment.knowledge_points)}
-
-
-def _normalize_knowledge_scores(raw_scores: Any, assignment: Assignment, score: float) -> dict[str, float]:
-    normalized: dict[str, float] = {}
-    valid_ids = {str(kp_id) for kp_id in _knowledge_point_ids(assignment.knowledge_points)}
-
-    if isinstance(raw_scores, dict):
-        for raw_kp_id, raw_score in raw_scores.items():
-            kp_id = str(raw_kp_id)
-            if valid_ids and kp_id not in valid_ids:
-                continue
-            score_100 = _normalize_score_100(raw_score)
-            if score_100 is not None:
-                normalized[kp_id] = score_100
-
-    return normalized or _fallback_knowledge_scores(assignment, score)
-
-
-def _normalize_annotations(
-    raw_annotations: Any,
+def _normalize_knowledge_scores(
+    value: Any,
     *,
-    fallback_knowledge_point_id: int | None,
-    valid_knowledge_point_ids: set[int],
-) -> list[dict[str, Any]]:
-    if not isinstance(raw_annotations, list):
+    knowledge_point_ids: list[int],
+    score: float,
+    max_score: float,
+) -> dict[str, float]:
+    allowed_ids = {str(kp_id) for kp_id in knowledge_point_ids}
+    output: dict[str, float] = {}
+
+    if isinstance(value, dict):
+        items = value.items()
+    elif isinstance(value, list):
+        items = []
+        for item in value:
+            if isinstance(item, dict):
+                kp_id = item.get("knowledge_point_id") or item.get("knowledge_unit_id") or item.get("id")
+                kp_score = item.get("score")
+                items.append((kp_id, kp_score))
+    else:
+        items = []
+
+    for key, raw_score in items:
+        key_text = str(key).strip()
+        if not key_text:
+            continue
+        if allowed_ids and key_text not in allowed_ids:
+            continue
+        output[key_text] = _normalize_score(raw_score, 100.0)
+
+    return output or _fallback_knowledge_scores(knowledge_point_ids, score, max_score)
+
+
+def _normalize_annotations(value: Any, *, knowledge_point_ids: list[int]) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
         return []
 
-    normalized: list[dict[str, Any]] = []
-    for item in raw_annotations:
+    allowed_ids = set(knowledge_point_ids)
+    annotations: list[dict[str, Any]] = []
+    for item in value:
         if not isinstance(item, dict):
             continue
 
-        content = item.get("content") or item.get("comment") or item.get("text") or item.get("message")
-        if not content or not str(content).strip():
+        annotation_type = str(item.get("annotation_type") or item.get("type") or "suggestion").strip().lower()
+        severity = str(item.get("severity") or item.get("level") or "medium").strip().lower()
+        content = str(item.get("content") or item.get("comment") or item.get("text") or item.get("message") or "").strip()
+        if not content:
             continue
 
-        annotation_type = str(item.get("annotation_type") or item.get("type") or "suggestion").lower()
-        if annotation_type not in ANNOTATION_TYPES:
-            annotation_type = "suggestion"
-
-        severity = str(item.get("severity") or item.get("level") or "medium").lower()
-        if severity not in ANNOTATION_SEVERITIES:
-            severity = "medium"
-
-        position = item.get("position") or item.get("anchor") or item.get("location") or {"type": "text", "offset": 0}
+        position = item.get("position") or item.get("anchor") or item.get("location")
         if not isinstance(position, dict):
-            position = {"type": "text", "offset": 0}
-        position.setdefault("type", "text")
+            position = {}
+        position = {"type": "text", **position}
 
-        raw_kp_id = (
-            item.get("knowledge_point_id")
-            or item.get("knowledge_unit_id")
-            or item.get("kp_id")
-            or fallback_knowledge_point_id
-        )
+        raw_kp_id = item.get("knowledge_point_id") or item.get("knowledge_unit_id") or item.get("kp_id")
         try:
-            knowledge_point_id = int(raw_kp_id) if raw_kp_id is not None else None
+            kp_id = int(raw_kp_id) if raw_kp_id is not None else None
         except (TypeError, ValueError):
-            knowledge_point_id = None
-        if valid_knowledge_point_ids and knowledge_point_id not in valid_knowledge_point_ids:
-            knowledge_point_id = None
+            kp_id = None
+        if kp_id is not None and allowed_ids and kp_id not in allowed_ids:
+            kp_id = None
 
-        normalized.append(
+        annotations.append(
             {
-                "annotation_type": annotation_type,
+                "annotation_type": annotation_type if annotation_type in ANNOTATION_TYPES else "suggestion",
                 "position": position,
-                "content": str(content).strip(),
-                "severity": severity,
-                "knowledge_point_id": knowledge_point_id,
+                "content": content,
+                "severity": severity if severity in ANNOTATION_SEVERITIES else "medium",
+                "knowledge_point_id": kp_id,
             }
         )
 
-    return normalized
-
-
-def _fallback_annotation(*, score_100: float, knowledge_point_id: int | None) -> list[dict[str, Any]]:
-    if score_100 >= 85.0:
-        return [
-            {
-                "annotation_type": "praise",
-                "position": {"type": "text", "offset": 0},
-                "content": "This submission is complete and clearly structured.",
-                "severity": "low",
-                "knowledge_point_id": knowledge_point_id,
-            }
-        ]
-
-    return [
-        {
-            "annotation_type": "suggestion",
-            "position": {"type": "text", "offset": 0},
-            "content": "Add more supporting detail and examples to strengthen the answer.",
-            "severity": "medium",
-            "knowledge_point_id": knowledge_point_id,
-        }
-    ]
+    return annotations
 
 
 def _standardize_grading_payload(
-    raw_payload: dict[str, Any] | None,
+    data: dict[str, Any] | None,
     *,
     assignment: Assignment,
-    submission: Submission,
     source: str,
+    submission: Submission | None = None,
     error: str | None = None,
 ) -> dict[str, Any]:
-    fallback_score = _calculate_score(
-        content=submission.content,
-        has_file=bool(submission.file_path),
-        max_score=float(assignment.max_score),
+    data = data if isinstance(data, dict) else {}
+    max_score = float(assignment.max_score)
+    fallback_score = (
+        _calculate_score(content=submission.content, has_file=bool(submission.file_path), max_score=max_score)
+        if submission is not None
+        else 0.0
     )
-    raw_payload = raw_payload if isinstance(raw_payload, dict) else {}
-    score = _normalize_score(raw_payload.get("score"), float(assignment.max_score)) or fallback_score
-    score_100 = _overall_score_100(score, float(assignment.max_score))
+    raw_score = data.get("score")
+    score = _normalize_score(raw_score, max_score) if raw_score is not None else fallback_score
     knowledge_point_ids = _knowledge_point_ids(assignment.knowledge_points)
-    fallback_kp_id = knowledge_point_ids[0] if knowledge_point_ids else None
-
-    comment = raw_payload.get("overall_comment") or raw_payload.get("comment")
-    if not comment:
-        comment = "Automated grading completed."
+    overall_comment = str(data.get("overall_comment") or data.get("comment") or "").strip()
+    if not overall_comment:
+        overall_comment = "已完成自动批改。"
         if source == "fallback" and error:
-            comment += f" LLM grading was unavailable, so fallback rules were used: {error[:180]}"
-
-    knowledge_point_scores = _normalize_knowledge_scores(raw_payload.get("knowledge_point_scores"), assignment, score)
-    annotations = _normalize_annotations(
-        raw_payload.get("annotations"),
-        fallback_knowledge_point_id=fallback_kp_id,
-        valid_knowledge_point_ids=set(knowledge_point_ids),
-    )
-    if not annotations:
-        annotations = _fallback_annotation(score_100=score_100, knowledge_point_id=fallback_kp_id)
+            overall_comment += f" LLM 批改暂不可用，已回退到基础规则：{error[:180]}"
 
     return {
         "score": score,
-        "max_score": float(assignment.max_score),
-        "overall_comment": str(comment),
-        "strengths": _normalize_list(raw_payload.get("strengths"))
-        or (["Submission format is complete"] if submission.content or submission.file_path else []),
-        "weaknesses": _normalize_list(raw_payload.get("weaknesses"))
-        or ([] if score_100 >= 60.0 else ["The answer is too brief and needs more detail."]),
-        "knowledge_point_scores": knowledge_point_scores,
-        "annotations": annotations,
+        "max_score": max_score,
+        "overall_comment": overall_comment,
+        "strengths": _normalize_list(data.get("strengths")),
+        "weaknesses": _normalize_list(data.get("weaknesses")),
+        "annotations": _normalize_annotations(data.get("annotations"), knowledge_point_ids=knowledge_point_ids),
+        "knowledge_point_scores": _normalize_knowledge_scores(
+            data.get("knowledge_point_scores"),
+            knowledge_point_ids=knowledge_point_ids,
+            score=score,
+            max_score=max_score,
+        ),
         "source": source,
     }
 
@@ -320,16 +286,16 @@ async def _grade_with_llm(*, assignment: Assignment, submission: Submission) -> 
     provider = get_llm_provider()
     assignment_context = _format_assignment_context(assignment)
     content, warning_text = _build_grading_content(submission)
-    file_note = f"Student submitted attachment: {submission.file_path}" if submission.file_path else "No attachment."
+    file_note = f"学生提交了附件：{submission.file_path}" if submission.file_path else "学生未提交附件。"
     if warning_text:
-        file_note += f"\nAttachment processing note: {warning_text}"
+        file_note += f"\n附件处理提示：{warning_text}"
 
     messages = [
         {
             "role": "system",
             "content": (
-                "You are an automatic grading assistant. Grade according to the assignment, rubric, "
-                "reference answer, and student submission. Return only a JSON object, with no markdown."
+                "你是教学平台的自动批改助手。请根据作业题目、评分标准、参考答案、关联知识点和学生提交内容进行评分。"
+                "必须只返回 JSON 对象，不要返回 markdown，不要添加解释性前后缀。"
             ),
         },
         {
@@ -337,27 +303,62 @@ async def _grade_with_llm(*, assignment: Assignment, submission: Submission) -> 
             "content": (
                 f"{assignment_context}\n"
                 f"{file_note}\n\n"
-                f"Student submission content:\n{content or 'No parseable text content.'}\n\n"
-                "Return JSON with exactly these fields: "
-                "score, overall_comment, strengths, weaknesses, knowledge_point_scores, annotations. "
-                "knowledge_point_scores must map knowledge point ID strings to 0-100 numbers. "
-                "annotations must be objects with annotation_type, position, content, severity, knowledge_point_id."
+                f"学生提交内容（包含文本提交和可解析附件内容）：\n{content or '无可解析文本内容'}\n\n"
+                "请严格返回如下 JSON 结构：\n"
+                "{\n"
+                '  "score": 0 到满分之间的数字,\n'
+                '  "overall_comment": "总体评价，不能为空",\n'
+                '  "strengths": ["优点1"],\n'
+                '  "weaknesses": ["不足1"],\n'
+                '  "knowledge_point_scores": {"知识点ID": 0 到 100 的数字},\n'
+                '  "annotations": [\n'
+                "    {\n"
+                '      "annotation_type": "error|warning|suggestion|praise",\n'
+                '      "position": {"type": "text", "line": 1, "paragraph": 1, "quote": "学生原文片段"},\n'
+                '      "content": "批注意见",\n'
+                '      "severity": "low|medium|high|critical",\n'
+                '      "knowledge_point_id": 知识点ID或null\n'
+                "    }\n"
+                "  ]\n"
+                "}"
             ),
         },
     ]
     raw = await provider.chat(messages, temperature=0.2)
-    data = _safe_json_loads(raw)
-    return _standardize_grading_payload(data, assignment=assignment, submission=submission, source="llm")
+    return _standardize_grading_payload(
+        _safe_json_loads(raw),
+        assignment=assignment,
+        submission=submission,
+        source="llm",
+    )
 
 
 def _fallback_grading(*, assignment: Assignment, submission: Submission, error: str | None = None) -> dict[str, Any]:
-    return _standardize_grading_payload(
-        None,
-        assignment=assignment,
-        submission=submission,
-        source="fallback",
-        error=error,
+    score = _calculate_score(
+        content=submission.content,
+        has_file=bool(submission.file_path),
+        max_score=float(assignment.max_score),
     )
+    data = {
+        "score": score,
+        "overall_comment": "已完成自动批改（规则兜底）。",
+        "strengths": ["提交格式完整"] if submission.content or submission.file_path else [],
+        "weaknesses": [] if score >= float(assignment.max_score) * 0.6 else ["答案内容偏少，建议补充细节"],
+        "annotations": [
+            {
+                "annotation_type": "suggestion",
+                "position": {"type": "text", "paragraph": 1, "quote": (submission.content or "")[:80]},
+                "content": "建议补充关键步骤、依据或示例，使答案更完整。",
+                "severity": "medium",
+                "knowledge_point_id": None,
+            }
+        ]
+        if score < float(assignment.max_score) * 0.6
+        else [],
+    }
+    if error:
+        data["overall_comment"] += f" LLM 批改暂不可用，已回退到基础规则：{error[:180]}"
+    return _standardize_grading_payload(data, assignment=assignment, submission=submission, source="fallback")
 
 
 def _grade_submission_content(*, assignment: Assignment, submission: Submission) -> dict[str, Any]:
@@ -575,6 +576,7 @@ def grade_submission(submission_id: int):
                 "score": grading_payload["score"],
                 "source": grading_payload["source"],
                 "first_success": first_success,
+                "annotations": grading_payload["annotations"],
                 "annotations_count": len(grading_payload["annotations"]),
                 "knowledge_point_scores": grading_payload["knowledge_point_scores"],
             }
