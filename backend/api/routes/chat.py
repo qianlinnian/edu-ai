@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from datetime import datetime, timezone
 
-from agent_core.agent_base import AgentConfig,QAAgent
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from agent_core.agent_base import AgentConfig, QAAgent
 from core.database import get_db
 from core.security import get_current_user
 from models.agent import AgentInstance
@@ -35,13 +37,12 @@ async def _build_history_messages(session_id: int, db: AsyncSession) -> list[dic
         .where(ChatMessage.session_id == session_id)
         .order_by(ChatMessage.created_at, ChatMessage.id)
     )
-    history = result.scalars().all() 
+    history = result.scalars().all()
 
     return [{"role": item.role, "content": item.content} for item in history]
 
 
 @router.post("/send")
-# api接口 负责接收用户消息 调用agent生成回答 并保存聊天记录
 async def send_message(
     data: ChatRequest,
     db: AsyncSession = Depends(get_db),
@@ -80,6 +81,7 @@ async def send_message(
 
     user_msg = ChatMessage(session_id=session.id, role="user", content=data.message)
     db.add(user_msg)
+    session.updated_at = datetime.now(timezone.utc)
     await db.flush()
 
     history = await _build_history_messages(session.id, db)
@@ -92,7 +94,7 @@ async def send_message(
         llm_model=agent.llm_model,
     )
 
-    qa_agent = QAAgent(agent_config) # 创建 QAAgent实例，传入agent_config配置。
+    qa_agent = QAAgent(agent_config)
     response = await qa_agent.chat(
         query=data.message,
         history=history[:-1] if history else [],
@@ -140,10 +142,43 @@ async def list_sessions(
 async def get_session_messages(
     session_id: int,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
+    session_result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.id == session_id,
+            ChatSession.user_id == user.id,
+        )
+    )
+    session = session_result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
     result = await db.execute(
         select(ChatMessage)
         .where(ChatMessage.session_id == session_id)
         .order_by(ChatMessage.created_at, ChatMessage.id)
     )
     return result.scalars().all()
+
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    session_result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.id == session_id,
+            ChatSession.user_id == user.id,
+        )
+    )
+    session = session_result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    await db.execute(delete(ChatMessage).where(ChatMessage.session_id == session_id))
+    await db.delete(session)
+    await db.flush()
+    return {"ok": True}

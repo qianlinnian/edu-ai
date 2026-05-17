@@ -42,12 +42,25 @@ interface SessionItem {
   messages: MessageItem[]
 }
 
+interface ServerSessionItem {
+  id: number
+  title: string
+  course_id: number
+}
+
+interface ServerMessageItem {
+  id: number
+  role: 'user' | 'assistant' | 'system'
+  content: string
+}
+
 export default function Chat() {
   const [courses, setCourses] = useState<CourseItem[]>([])
   const [agents, setAgents] = useState<AgentItem[]>([])
   const [selectedCourse, setSelectedCourse] = useState<number>()
   const [loadingCourses, setLoadingCourses] = useState(false)
   const [loadingAgents, setLoadingAgents] = useState(false)
+  const [loadingSessions, setLoadingSessions] = useState(false)
   const [sessions, setSessions] = useState<SessionItem[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
   const [input, setInput] = useState('')
@@ -69,6 +82,49 @@ export default function Chat() {
     [agents]
   )
 
+  const buildWelcomeSession = (course: CourseItem, agentId?: number): SessionItem => {
+    const now = Date.now()
+    return {
+      localId: now,
+      title: `新对话 - ${course.name}`,
+      courseId: course.id,
+      courseName: course.name,
+      agentId,
+      messages: [
+        {
+          id: now + 1,
+          role: 'assistant',
+          content: `你好！我是 **${course.name}** 课程助手，请上传资料后开始提问。`,
+        },
+      ],
+    }
+  }
+
+  const mapServerMessages = (items: ServerMessageItem[]): MessageItem[] => {
+    return items
+      .filter((item): item is ServerMessageItem & { role: 'user' | 'assistant' } =>
+        item.role === 'user' || item.role === 'assistant'
+      )
+      .map((item) => ({
+        id: item.id,
+        role: item.role,
+        content: item.content,
+      }))
+  }
+
+  const loadSessionMessages = async (serverSessionId: number, localId: number) => {
+    try {
+      const { data } = await chatAPI.getMessages(serverSessionId)
+      setSessions((prev) => prev.map((session) =>
+        session.localId === localId
+          ? { ...session, messages: mapServerMessages(data) }
+          : session
+      ))
+    } catch (error: any) {
+      message.error(error?.response?.data?.detail || '加载聊天记录失败')
+    }
+  }
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [activeSession?.messages.length])
@@ -88,6 +144,7 @@ export default function Chat() {
         setLoadingCourses(false)
       }
     }
+
     void loadCourses()
   }, [])
 
@@ -114,57 +171,96 @@ export default function Chat() {
   }, [selectedCourse])
 
   useEffect(() => {
-    if (!selectedCourseItem) return
-    const existing = sessions.find((session) => session.courseId === selectedCourseItem.id)
-    if (existing) {
-      setActiveId(existing.localId)
+    if (!selectedCourseItem) {
+      setSessions([])
+      setActiveId(null)
       return
     }
 
-    const newSession: SessionItem = {
-      localId: Date.now(),
-      title: `新对话 · ${selectedCourseItem.name}`,
-      courseId: selectedCourseItem.id,
-      courseName: selectedCourseItem.name,
-      agentId: selectedAgent?.id,
-      messages: [
-        {
-          id: Date.now() + 1,
-          role: 'assistant',
-          content: `你好！我是 **${selectedCourseItem.name}** 课程助手，请上传资料后开始提问。`,
-        },
-      ],
+    let cancelled = false
+
+    const loadPersistedSessions = async () => {
+      setLoadingSessions(true)
+      try {
+        const { data } = await chatAPI.listSessions(selectedCourseItem.id)
+        if (cancelled) return
+
+        const serverSessions = data as ServerSessionItem[]
+        if (serverSessions.length === 0) {
+          const newSession = buildWelcomeSession(selectedCourseItem, selectedAgent?.id)
+          setSessions([newSession])
+          setActiveId(newSession.localId)
+          return
+        }
+
+        const mapped: SessionItem[] = serverSessions.map((item) => ({
+          localId: item.id,
+          serverSessionId: item.id,
+          title: item.title || `历史对话 - ${selectedCourseItem.name}`,
+          courseId: item.course_id,
+          courseName: selectedCourseItem.name,
+          agentId: selectedAgent?.id,
+          messages: [],
+        }))
+
+        setSessions(mapped)
+        setActiveId(mapped[0].localId)
+
+        const { data: messages } = await chatAPI.getMessages(mapped[0].serverSessionId!)
+        if (cancelled) return
+        setSessions((prev) => prev.map((session) =>
+          session.localId === mapped[0].localId
+            ? { ...session, messages: mapServerMessages(messages) }
+            : session
+        ))
+      } catch (error: any) {
+        if (cancelled) return
+        message.error(error?.response?.data?.detail || '加载历史对话失败')
+        const newSession = buildWelcomeSession(selectedCourseItem, selectedAgent?.id)
+        setSessions([newSession])
+        setActiveId(newSession.localId)
+      } finally {
+        if (!cancelled) setLoadingSessions(false)
+      }
     }
-    setSessions((prev) => [...prev, newSession])
-    setActiveId(newSession.localId)
-  }, [selectedCourseItem, selectedAgent?.id])
+
+    void loadPersistedSessions()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedCourseItem?.id, selectedAgent?.id])
 
   const createSession = () => {
     if (!selectedCourseItem) return
-    const newSession: SessionItem = {
-      localId: Date.now(),
-      title: `新对话 · ${selectedCourseItem.name}`,
-      courseId: selectedCourseItem.id,
-      courseName: selectedCourseItem.name,
-      agentId: selectedAgent?.id,
-      messages: [
-        {
-          id: Date.now() + 1,
-          role: 'assistant',
-          content: `你好！我是 **${selectedCourseItem.name}** 课程助手，请开始提问。`,
-        },
-      ],
-    }
+    const newSession = buildWelcomeSession(selectedCourseItem, selectedAgent?.id)
     setSessions((prev) => [...prev, newSession])
     setActiveId(newSession.localId)
   }
 
-  const removeSession = (id: number, e: React.MouseEvent) => {
+  const removeSession = async (sessionToRemove: SessionItem, e: React.MouseEvent) => {
     e.stopPropagation()
-    const next = sessions.filter((session) => session.localId !== id)
-    setSessions(next)
-    if (activeId === id) {
-      setActiveId(next[0]?.localId ?? null)
+
+    try {
+      if (sessionToRemove.serverSessionId) {
+        await chatAPI.deleteSession(sessionToRemove.serverSessionId)
+      }
+
+      const next = sessions.filter((session) => session.localId !== sessionToRemove.localId)
+      setSessions(next)
+      if (activeId === sessionToRemove.localId) {
+        setActiveId(next[0]?.localId ?? null)
+      }
+      message.success('对话已删除')
+    } catch (error: any) {
+      message.error(error?.response?.data?.detail || '删除对话失败')
+    }
+  }
+
+  const selectSession = (session: SessionItem) => {
+    setActiveId(session.localId)
+    if (session.serverSessionId && session.messages.length === 0) {
+      void loadSessionMessages(session.serverSessionId, session.localId)
     }
   }
 
@@ -261,21 +357,34 @@ export default function Chat() {
           ) : selectedAgent ? (
             <Tag color="green">当前 Agent：{selectedAgent.name}</Tag>
           ) : (
-            <Alert type="warning" showIcon message="当前课程还没有可用答疑 Agent" description="这是后端数据问题，不是前端故障。需要先在数据库或后端接口中为该课程创建 Agent 实例。" />
+            <Alert
+              type="warning"
+              showIcon
+              message="当前课程还没有可用答疑 Agent"
+              description="需要先在后端为该课程创建 Agent 实例。"
+            />
           )}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
-          {sessions.length === 0 && <div style={{ padding: 16, color: '#bbb', fontSize: 12, textAlign: 'center' }}>暂无对话</div>}
+          {sessions.length === 0 && (
+            <div style={{ padding: 16, color: '#bbb', fontSize: 12, textAlign: 'center' }}>
+              {loadingSessions ? '加载历史对话中...' : '暂无对话'}
+            </div>
+          )}
           {sessions.map((session) => (
             <div
               key={session.localId}
-              onClick={() => setActiveId(session.localId)}
+              onClick={() => selectSession(session)}
               style={{
-                padding: '10px 12px', cursor: 'pointer',
+                padding: '10px 12px',
+                cursor: 'pointer',
                 background: activeId === session.localId ? '#e6f4ff' : 'transparent',
                 borderLeft: `3px solid ${activeId === session.localId ? '#00a8ff' : 'transparent'}`,
-                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: 4,
               }}
             >
               <div style={{ minWidth: 0 }}>
@@ -285,7 +394,7 @@ export default function Chat() {
                 <Tag color="blue" style={{ fontSize: 10, marginTop: 4, padding: '0 4px' }}>{session.courseName}</Tag>
               </div>
               <Tooltip title="删除">
-                <DeleteOutlined style={{ color: '#ccc', fontSize: 12, flexShrink: 0, marginTop: 2 }} onClick={(e) => removeSession(session.localId, e)} />
+                <DeleteOutlined style={{ color: '#ccc', fontSize: 12, flexShrink: 0, marginTop: 2 }} onClick={(e) => void removeSession(session, e)} />
               </Tooltip>
             </div>
           ))}
@@ -296,6 +405,7 @@ export default function Chat() {
         <div style={{ padding: '12px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
           <RobotOutlined style={{ color: '#00a8ff', fontSize: 18 }} />
           <span style={{ fontWeight: 600, fontSize: 15 }}>{activeSession?.courseName ?? '智能答疑'}</span>
+          {activeSession?.serverSessionId && <Tag color="green">历史记录已保存</Tag>}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
@@ -311,7 +421,8 @@ export default function Chat() {
                     color: msg.role === 'user' ? '#fff' : '#1a1a1a',
                     padding: '10px 16px',
                     borderRadius: msg.role === 'user' ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
-                    fontSize: 14, lineHeight: 1.7,
+                    fontSize: 14,
+                    lineHeight: 1.7,
                     boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
                   }}>
                     {msg.loading ? (
@@ -345,13 +456,26 @@ export default function Chat() {
         </div>
 
         <div style={{ padding: '12px 20px 16px', borderTop: '1px solid #f0f0f0' }}>
-          {!selectedAgent && <Alert type="warning" showIcon style={{ marginBottom: 10 }} message="当前课程没有可用答疑 Agent，请先在后端为该课程创建 Agent 实例。" description="可通过后端 `/api/v1/agents/instances` 创建，或补充种子数据后再测试问答。" />}
+          {!selectedAgent && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 10 }}
+              message="当前课程没有可用答疑 Agent"
+              description="请先通过后端接口或种子数据为该课程创建 Agent 实例。"
+            />
+          )}
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
             <Input.TextArea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
-              placeholder="输入问题… (Enter 发送，Shift+Enter 换行)"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void send()
+                }
+              }}
+              placeholder="输入问题...（Enter 发送，Shift+Enter 换行）"
               autoSize={{ minRows: 1, maxRows: 5 }}
               style={{ borderRadius: 10, fontSize: 14, flex: 1 }}
               disabled={sending || !selectedAgent}

@@ -92,9 +92,9 @@ class ZhipuProvider(BaseLLMProvider):
         from zhipuai import ZhipuAI
         client = ZhipuAI(api_key=self.api_key)
         response = client.chat.completions.create(model=self.model, messages=messages, **kwargs)
-        if response.status_code == 200:
+        if response.choices and response.choices[0].message:
             return response.choices[0].message.content
-        raise Exception(f"智谱API error: function(chat), status_code: {response.status_code} - {response.message}")
+        raise Exception("Zhipu API error: function(chat) returned empty choices")
 
     async def chat_stream(self, messages: list[dict], **kwargs):
         from zhipuai import ZhipuAI
@@ -104,7 +104,7 @@ class ZhipuProvider(BaseLLMProvider):
             content = chunk.choices[0].delta.content
             if content:
                 yield content
-        raise Exception(f"智谱API error: function(chat_stream), status_code: {response.status_code} - {response.message}")
+
     async def embedding(self, texts: list[str]) -> list[list[float]]:
         from zhipuai import ZhipuAI
         client = ZhipuAI(api_key=self.api_key)

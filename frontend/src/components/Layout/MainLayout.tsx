@@ -29,6 +29,7 @@ const teacherMenuItems = [
 
 const studentMenuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
+  { key: '/courses', icon: <BookOutlined />, label: '我的课程' },
   { key: '/chat', icon: <MessageOutlined />, label: '智能答疑' },
   { key: '/assignments', icon: <FileTextOutlined />, label: '我的作业' },
   { key: '/exercises', icon: <EditOutlined />, label: '练习中心' },
@@ -56,7 +57,7 @@ export default function MainLayout() {
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin'
   const menuItems = isTeacher ? teacherMenuItems : studentMenuItems
 
-  // 选中当前路由对应菜单项（支持子路由高亮）
+  // 根据当前路径高亮菜单，支持子路由。
   const selectedKey = menuItems
     .map(item => item.key)
     .filter(k => k !== '/')
@@ -75,40 +76,53 @@ export default function MainLayout() {
         }}
         theme="dark"
       >
-        {/* Logo */}
         <div style={{
-          height: 56, margin: '12px 16px',
-          display: 'flex', alignItems: 'center',
+          height: 56,
+          margin: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: collapsed ? 'center' : 'flex-start',
-          gap: 10, overflow: 'hidden',
+          gap: 10,
+          overflow: 'hidden',
           borderBottom: '1px solid rgba(255,255,255,0.08)',
           paddingBottom: 12,
         }}>
           <div style={{
-            minWidth: 32, width: 32, height: 32, borderRadius: 8,
+            minWidth: 32,
+            width: 32,
+            height: 32,
+            borderRadius: 8,
             background: 'linear-gradient(135deg, #00a8ff, #0078d7)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontWeight: 900, fontSize: 16, color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 900,
+            fontSize: 16,
+            color: '#fff',
             boxShadow: '0 2px 10px rgba(0,168,255,0.4)',
             flexShrink: 0,
           }}>E</div>
           {!collapsed && (
             <span style={{
-              color: '#fff', fontWeight: 800, fontSize: 18,
-              fontFamily: 'Georgia, serif', letterSpacing: 2,
+              color: '#fff',
+              fontWeight: 800,
+              fontSize: 18,
+              fontFamily: 'Georgia, serif',
+              letterSpacing: 2,
               whiteSpace: 'nowrap',
             }}>EduAI</span>
           )}
         </div>
 
-        {/* 角色标签 */}
         {!collapsed && user && (
           <div style={{
             margin: '8px 16px 12px',
             padding: '6px 12px',
             borderRadius: 8,
             background: 'rgba(255,255,255,0.06)',
-            display: 'flex', alignItems: 'center', gap: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
           }}>
             <Badge color={roleColor[user.role]} />
             <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12 }}>
@@ -164,7 +178,9 @@ export default function MainLayout() {
               </Avatar>
               <span style={{ fontWeight: 500 }}>{user?.full_name}</span>
               <span style={{
-                fontSize: 11, padding: '1px 8px', borderRadius: 10,
+                fontSize: 11,
+                padding: '1px 8px',
+                borderRadius: 10,
                 background: roleColor[user?.role ?? 'student'] + '20',
                 color: roleColor[user?.role ?? 'student'],
                 fontWeight: 600,

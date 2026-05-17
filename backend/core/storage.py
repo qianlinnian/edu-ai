@@ -39,3 +39,9 @@ def upload_bytes(*, object_name: str, data: bytes, content_type: str = "applicat
     except S3Error:
         raise
     return object_name
+
+
+def remove_object(*, object_name: str) -> None:
+    client = get_minio_client()
+    ensure_bucket(client, settings.MINIO_BUCKET)
+    client.remove_object(settings.MINIO_BUCKET, object_name)
