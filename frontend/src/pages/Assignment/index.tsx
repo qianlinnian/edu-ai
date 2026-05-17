@@ -4,7 +4,7 @@ import {
   Select, Space, Table, Tabs, Tag, Typography, Upload,
 } from 'antd'
 import {
-  CodeOutlined, EyeOutlined, PlusOutlined, RobotOutlined, SendOutlined, UploadOutlined,
+  ArrowLeftOutlined, CodeOutlined, EyeOutlined, PlusOutlined, RobotOutlined, SendOutlined, UploadOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { assignmentAPI, courseAPI } from '../../services/api'
@@ -47,7 +47,6 @@ export default function Assignment() {
   const [assignments, setAssignments] = useState<AssignmentItem[]>([])
   const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>()
   const [selectedAssignment, setSelectedAssignment] = useState<AssignmentItem | null>(null)
-  const [studentDetail, setStudentDetail] = useState<AssignmentItem | null>(null)
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null)
   const [loading, setLoading] = useState(false)
@@ -60,8 +59,13 @@ export default function Assignment() {
   const [submitting, setSubmitting] = useState(false)
   const [createForm] = Form.useForm()
 
-  const courseOptions = useMemo(() => courses.map((course) => ({ value: course.id, label: `${course.name}（${course.code}）` })), [courses])
-  const visibleAssignments = selectedCourseId ? assignments.filter((item) => item.course_id === selectedCourseId) : assignments
+  const courseOptions = useMemo(
+    () => courses.map((course) => ({ value: course.id, label: `${course.name}（${course.code}）` })),
+    [courses],
+  )
+  const visibleAssignments = selectedCourseId
+    ? assignments.filter((item) => item.course_id === selectedCourseId)
+    : assignments
 
   const loadAssignments = async (courseList: Course[]) => {
     const result = await Promise.all(courseList.map(async (course) => {
@@ -104,14 +108,21 @@ export default function Assignment() {
 
   useEffect(() => { void loadData() }, [])
 
-  const openTeacherDetail = async (assignment: AssignmentItem) => {
+  const openAssignmentDetail = async (assignment: AssignmentItem) => {
     setSelectedAssignment(assignment)
+    setSelectedSubmission(null)
     await loadSubmissions(assignment.id)
   }
 
+  const closeAssignmentDetail = () => {
+    setSelectedAssignment(null)
+    setSubmissions([])
+    setSelectedSubmission(null)
+  }
+
   const handleTeacherAIClick = async (assignment: AssignmentItem) => {
-    message.info('当前作业在学生提交后会自动进入 AI 批改流程，可在提交列表中查看批改进度。')
-    await openTeacherDetail(assignment)
+    message.info('学生提交后会自动进入 AI 批改流程，可在提交列表中查看批改进度。')
+    await openAssignmentDetail(assignment)
   }
 
   const createAssignment = async (values: any) => {
@@ -150,15 +161,18 @@ export default function Assignment() {
     }
     setSubmitting(true)
     try {
-      const { data } = await assignmentAPI.submit(submitOpen.id, submitMode === 'code' ? codeContent : undefined, submitMode === 'file' ? submitFile : undefined)
+      const { data } = await assignmentAPI.submit(
+        submitOpen.id,
+        submitMode === 'code' ? codeContent : undefined,
+        submitMode === 'file' ? submitFile : undefined,
+      )
       message.success(data?.message || '提交成功，正在批改中')
       const submissionId = data?.id
       setSubmitOpen(null)
       setCodeContent('')
       setSubmitFile(undefined)
-      if (submissionId) {
-        navigate(`/grading/${submissionId}`)
-      }
+      if (selectedAssignment) await loadSubmissions(selectedAssignment.id)
+      if (submissionId) navigate(`/grading/${submissionId}`)
     } catch (error: any) {
       message.error(error?.response?.data?.detail || '提交失败')
     } finally {
@@ -169,51 +183,98 @@ export default function Assignment() {
   const detailContent = (assignment: AssignmentItem) => (
     <Space direction="vertical" size={14} style={{ width: '100%' }}>
       <Row gutter={[16, 12]}>
-        <Col span={12}><Typography.Text type="secondary">作业名称</Typography.Text><div style={{ fontWeight: 600 }}>{assignment.title}</div></Col>
-        <Col span={12}><Typography.Text type="secondary">所属课程</Typography.Text><div><Tag color="blue">{assignment.courseName || assignment.course_id}</Tag></div></Col>
-        <Col span={12}><Typography.Text type="secondary">作业类型</Typography.Text><div>{assignment.assignment_type}</div></Col>
-        <Col span={12}><Typography.Text type="secondary">满分</Typography.Text><div>{assignment.max_score} 分</div></Col>
+        <Col xs={24} md={12}>
+          <Typography.Text type="secondary">作业名称</Typography.Text>
+          <div style={{ fontWeight: 600 }}>{assignment.title}</div>
+        </Col>
+        <Col xs={24} md={12}>
+          <Typography.Text type="secondary">所属课程</Typography.Text>
+          <div><Tag color="blue">{assignment.courseName || assignment.course_id}</Tag></div>
+        </Col>
+        <Col xs={24} md={12}>
+          <Typography.Text type="secondary">作业类型</Typography.Text>
+          <div>{assignment.assignment_type}</div>
+        </Col>
+        <Col xs={24} md={12}>
+          <Typography.Text type="secondary">满分</Typography.Text>
+          <div>{assignment.max_score} 分</div>
+        </Col>
       </Row>
       <div>
         <Typography.Text type="secondary">作业说明</Typography.Text>
-        <Typography.Paragraph style={{ marginTop: 6 }}>{assignment.description || '暂无说明'}</Typography.Paragraph>
+        <Typography.Paragraph style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>
+          {assignment.description || '暂无说明'}
+        </Typography.Paragraph>
       </div>
     </Space>
   )
 
-  if (isTeacher && selectedAssignment) {
+  const submissionColumns = [
+    { title: '提交ID', dataIndex: 'id' },
+    ...(isTeacher ? [{
+      title: '学生ID',
+      dataIndex: 'student_id',
+      render: (id: number) => <Space><Avatar size="small">{id}</Avatar>学生 {id}</Space>,
+    }] : []),
+    { title: '提交时间', dataIndex: 'submitted_at', render: (v?: string) => v ? new Date(v).toLocaleString() : '-' },
+    { title: '提交方式', render: (_: unknown, row: Submission) => row.file_path ? <Tag>文件</Tag> : <Tag>文本</Tag> },
+    { title: '批改状态', dataIndex: 'status', render: statusTag },
+    {
+      title: '操作',
+      render: (_: unknown, row: Submission) => (
+        <Space>
+          <Button size="small" onClick={() => setSelectedSubmission(row)}>查看内容</Button>
+          <Button size="small" icon={<EyeOutlined />} onClick={() => navigate(`/grading/${row.id}`)}>查看批改</Button>
+        </Space>
+      ),
+    },
+  ]
+
+  if (selectedAssignment) {
     return <div>
-      <Space style={{ marginBottom: 24 }}>
-        <Button onClick={() => setSelectedAssignment(null)}>← 返回</Button>
+      <Space style={{ marginBottom: 24 }} wrap>
+        <Button icon={<ArrowLeftOutlined />} onClick={closeAssignmentDetail}>返回</Button>
         <Typography.Title level={4} style={{ margin: 0 }}>{selectedAssignment.title}</Typography.Title>
         <Tag color="blue">{selectedAssignment.courseName}</Tag>
       </Space>
-      <Card title="作业详情" style={{ marginBottom: 16 }}>{detailContent(selectedAssignment)}</Card>
-      <Alert type="info" showIcon style={{ marginBottom: 16 }} message="学生提交后会自动触发 AI 批改，可在下方列表查看批改进度与结果入口。" />
-      <Table
-        loading={submissionsLoading}
-        dataSource={submissions}
-        rowKey="id"
-        columns={[
-          { title: '提交ID', dataIndex: 'id' },
-          { title: '学生ID', dataIndex: 'student_id', render: (id: number) => <Space><Avatar size="small">{id}</Avatar>学生 {id}</Space> },
-          { title: '提交时间', dataIndex: 'submitted_at', render: (v?: string) => v ? new Date(v).toLocaleString() : '-' },
-          { title: '提交方式', render: (_: unknown, row: Submission) => row.file_path ? <Tag>文件</Tag> : <Tag>文本</Tag> },
-          { title: '批改状态', dataIndex: 'status', render: statusTag },
-          {
-            title: '操作',
-            render: (_: unknown, row: Submission) => (
-              <Space>
-                <Button size="small" onClick={() => setSelectedSubmission(row)}>查看内容</Button>
-                <Button size="small" icon={<EyeOutlined />} onClick={() => navigate(`/grading/${row.id}`)}>查看批改</Button>
-              </Space>
-            ),
-          },
-        ]}
-      />
+
+      <Card title="作业信息" style={{ marginBottom: 16, borderRadius: 8 }}>
+        {detailContent(selectedAssignment)}
+      </Card>
+
+      {isTeacher ? (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="学生提交后会自动触发 AI 批改，可在下方列表查看批改进度与结果入口。"
+        />
+      ) : (
+        <Card style={{ marginBottom: 16, borderRadius: 8 }}>
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Typography.Text strong>提交作业</Typography.Text>
+            <Typography.Text type="secondary">
+              可以先查看作业信息和历史提交；需要再次提交时，点击下方按钮。已有提交可以直接查看批改内容。
+            </Typography.Text>
+            <Button type="primary" icon={<SendOutlined />} onClick={() => setSubmitOpen(selectedAssignment)}>
+              提交作业
+            </Button>
+          </Space>
+        </Card>
+      )}
+
+      <Card title={isTeacher ? '学生提交列表' : '我的提交记录'} style={{ borderRadius: 8 }}>
+        <Table
+          loading={submissionsLoading}
+          dataSource={submissions}
+          rowKey="id"
+          columns={submissionColumns}
+          locale={{ emptyText: <Empty description={isTeacher ? '暂无学生提交' : '暂无提交记录'} /> }}
+        />
+      </Card>
 
       <Modal
-        title="学生提交内容"
+        title="提交内容"
         open={selectedSubmission !== null}
         onCancel={() => setSelectedSubmission(null)}
         footer={<Button type="primary" onClick={() => setSelectedSubmission(null)}>关闭</Button>}
@@ -222,10 +283,10 @@ export default function Assignment() {
         {selectedSubmission && (
           <Space direction="vertical" size={14} style={{ width: '100%' }}>
             <Row gutter={[16, 12]}>
-              <Col span={12}><Typography.Text type="secondary">提交ID</Typography.Text><div>{selectedSubmission.id}</div></Col>
-              <Col span={12}><Typography.Text type="secondary">学生ID</Typography.Text><div>{selectedSubmission.student_id}</div></Col>
-              <Col span={12}><Typography.Text type="secondary">提交时间</Typography.Text><div>{selectedSubmission.submitted_at ? new Date(selectedSubmission.submitted_at).toLocaleString() : '-'}</div></Col>
-              <Col span={12}><Typography.Text type="secondary">批改状态</Typography.Text><div>{statusTag(selectedSubmission.status)}</div></Col>
+              <Col xs={24} md={12}><Typography.Text type="secondary">提交ID</Typography.Text><div>{selectedSubmission.id}</div></Col>
+              <Col xs={24} md={12}><Typography.Text type="secondary">学生ID</Typography.Text><div>{selectedSubmission.student_id}</div></Col>
+              <Col xs={24} md={12}><Typography.Text type="secondary">提交时间</Typography.Text><div>{selectedSubmission.submitted_at ? new Date(selectedSubmission.submitted_at).toLocaleString() : '-'}</div></Col>
+              <Col xs={24} md={12}><Typography.Text type="secondary">批改状态</Typography.Text><div>{statusTag(selectedSubmission.status)}</div></Col>
             </Row>
             <div>
               <Typography.Text type="secondary">文本内容</Typography.Text>
@@ -246,20 +307,42 @@ export default function Assignment() {
           </Space>
         )}
       </Modal>
+
+      <SubmitModal
+        openAssignment={submitOpen}
+        submitMode={submitMode}
+        codeContent={codeContent}
+        submitting={submitting}
+        onCancel={() => setSubmitOpen(null)}
+        onSubmit={submitAssignment}
+        onModeChange={setSubmitMode}
+        onCodeChange={setCodeContent}
+        onFileChange={setSubmitFile}
+      />
     </div>
   }
 
   const assignmentColumns = [
-    { title: '作业名称', dataIndex: 'title', render: (title: string, row: AssignmentItem) => <Button type="link" onClick={() => isTeacher ? openTeacherDetail(row) : setStudentDetail(row)}>{title}</Button> },
+    {
+      title: '作业名称',
+      dataIndex: 'title',
+      render: (title: string, row: AssignmentItem) => <Button type="link" onClick={() => void openAssignmentDetail(row)}>{title}</Button>,
+    },
     { title: '课程', render: (_: unknown, row: AssignmentItem) => <Tag color="blue">{row.courseName || row.course_id}</Tag> },
     { title: '作业类型', dataIndex: 'assignment_type' },
     { title: '满分', dataIndex: 'max_score', render: (score: number) => `${score} 分` },
     {
       title: '操作',
       render: (_: unknown, row: AssignmentItem) => isTeacher ? (
-        <Space><Button size="small" onClick={() => openTeacherDetail(row)}>查看提交</Button><Button size="small" icon={<RobotOutlined />} type="primary" ghost onClick={() => void handleTeacherAIClick(row)}>查看批改进度</Button></Space>
+        <Space>
+          <Button size="small" onClick={() => void openAssignmentDetail(row)}>查看提交</Button>
+          <Button size="small" icon={<RobotOutlined />} type="primary" ghost onClick={() => void handleTeacherAIClick(row)}>查看批改进度</Button>
+        </Space>
       ) : (
-        <Space><Button size="small" icon={<EyeOutlined />} onClick={() => setStudentDetail(row)}>查看详情</Button><Button size="small" type="primary" icon={<SendOutlined />} onClick={() => setSubmitOpen(row)}>提交作业</Button></Space>
+        <Space>
+          <Button size="small" icon={<EyeOutlined />} onClick={() => void openAssignmentDetail(row)}>查看详情</Button>
+          <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => setSubmitOpen(row)}>提交作业</Button>
+        </Space>
       ),
     },
   ]
@@ -268,12 +351,25 @@ export default function Assignment() {
     <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 24 }} wrap>
       <Typography.Title level={4} style={{ margin: 0 }}>{isTeacher ? '作业管理' : '我的作业'}</Typography.Title>
       <Space>
-        <Select allowClear placeholder="筛选课程" style={{ width: 260 }} options={courseOptions} value={selectedCourseId} onChange={setSelectedCourseId} />
+        <Select
+          allowClear
+          placeholder="筛选课程"
+          style={{ width: 260 }}
+          options={courseOptions}
+          value={selectedCourseId}
+          onChange={setSelectedCourseId}
+        />
         {isTeacher && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>创建作业</Button>}
       </Space>
     </Space>
 
-    <Table loading={loading} dataSource={visibleAssignments} rowKey="id" columns={assignmentColumns} locale={{ emptyText: <Empty description="暂无作业" /> }} />
+    <Table
+      loading={loading}
+      dataSource={visibleAssignments}
+      rowKey="id"
+      columns={assignmentColumns}
+      locale={{ emptyText: <Empty description="暂无作业" /> }}
+    />
 
     <Modal title="创建作业" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={() => createForm.submit()} okText="创建" confirmLoading={loading}>
       <Form form={createForm} layout="vertical" onFinish={createAssignment} initialValues={{ course_id: selectedCourseId, assignment_type: 'text', max_score: 100 }}>
@@ -287,15 +383,86 @@ export default function Assignment() {
       </Form>
     </Modal>
 
-    <Modal title="作业详情" open={studentDetail !== null} onCancel={() => setStudentDetail(null)} footer={<Button type="primary" onClick={() => setStudentDetail(null)}>知道了</Button>} width={640}>
-      {studentDetail && detailContent(studentDetail)}
-    </Modal>
+    <SubmitModal
+      openAssignment={submitOpen}
+      submitMode={submitMode}
+      codeContent={codeContent}
+      submitting={submitting}
+      onCancel={() => setSubmitOpen(null)}
+      onSubmit={submitAssignment}
+      onModeChange={setSubmitMode}
+      onCodeChange={setCodeContent}
+      onFileChange={setSubmitFile}
+    />
+  </div>
+}
 
-    <Modal title="提交作业" open={submitOpen !== null} onCancel={() => setSubmitOpen(null)} onOk={submitAssignment} okText="提交" confirmLoading={submitting} width={640}>
-      <Tabs activeKey={submitMode} onChange={(key) => setSubmitMode(key as 'code' | 'file')} items={[
-        { key: 'code', label: <span><CodeOutlined /> 在线编辑器</span>, children: <Input.TextArea value={codeContent} onChange={(e) => setCodeContent(e.target.value)} rows={12} placeholder="在此输入代码或文字内容..." style={{ fontFamily: 'monospace' }} /> },
-        { key: 'file', label: <span><UploadOutlined /> 上传文件</span>, children: <Upload.Dragger accept=".py,.txt,.md,.pdf,.docx,.pptx,.xlsx,.csv,.json" maxCount={1} beforeUpload={(file) => { setSubmitFile(file); return false }} onRemove={() => setSubmitFile(undefined)}><p style={{ fontSize: 24 }}><UploadOutlined /></p><p>点击或拖拽上传 .py / .txt / .md / .pdf / .docx / .pptx / .xlsx / .csv / .json</p></Upload.Dragger> },
+type SubmitModalProps = {
+  openAssignment: AssignmentItem | null
+  submitMode: 'code' | 'file'
+  codeContent: string
+  submitting: boolean
+  onCancel: () => void
+  onSubmit: () => void
+  onModeChange: (mode: 'code' | 'file') => void
+  onCodeChange: (value: string) => void
+  onFileChange: (file: File | undefined) => void
+}
+
+function SubmitModal({
+  openAssignment,
+  submitMode,
+  codeContent,
+  submitting,
+  onCancel,
+  onSubmit,
+  onModeChange,
+  onCodeChange,
+  onFileChange,
+}: SubmitModalProps) {
+  return (
+    <Modal
+      title="提交作业"
+      open={openAssignment !== null}
+      onCancel={onCancel}
+      onOk={onSubmit}
+      okText="提交"
+      confirmLoading={submitting}
+      width={640}
+    >
+      <Tabs activeKey={submitMode} onChange={(key) => onModeChange(key as 'code' | 'file')} items={[
+        {
+          key: 'code',
+          label: <span><CodeOutlined /> 在线编辑</span>,
+          children: (
+            <Input.TextArea
+              value={codeContent}
+              onChange={(e) => onCodeChange(e.target.value)}
+              rows={12}
+              placeholder="在此输入代码或文字内容..."
+              style={{ fontFamily: 'monospace' }}
+            />
+          ),
+        },
+        {
+          key: 'file',
+          label: <span><UploadOutlined /> 上传文件</span>,
+          children: (
+            <Upload.Dragger
+              accept=".py,.txt,.md,.pdf,.docx,.pptx,.xlsx,.csv,.json"
+              maxCount={1}
+              beforeUpload={(file) => {
+                onFileChange(file)
+                return false
+              }}
+              onRemove={() => onFileChange(undefined)}
+            >
+              <p style={{ fontSize: 24 }}><UploadOutlined /></p>
+              <p>点击或拖拽上传 .py / .txt / .md / .pdf / .docx / .pptx / .xlsx / .csv / .json</p>
+            </Upload.Dragger>
+          ),
+        },
       ]} />
     </Modal>
-  </div>
+  )
 }
