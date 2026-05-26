@@ -68,6 +68,7 @@ export const courseAPI = {
 export const chatAPI = {
   send: (data: { agent_id: number; course_id: number; session_id?: number; message: string }) =>
     api.post('/chat/send', data),
+  sendStreamUrl: '/api/v1/chat/send-stream',
   listSessions: (courseId?: number) => api.get('/chat/sessions', { params: { course_id: courseId } }),
   getMessages: (sessionId: number) => api.get(`/chat/sessions/${sessionId}/messages`),
   deleteSession: (sessionId: number) => api.delete(`/chat/sessions/${sessionId}`),

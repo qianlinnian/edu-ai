@@ -1,48 +1,199 @@
-"""统一Agent框架SDK - 所有课程Agent的基类"""
+"""Unified Agent SDK for course-specific teaching agents."""
+
+from __future__ import annotations
+
+import json
+import re
 from abc import ABC
 from dataclasses import dataclass, field
+from typing import Any
+
 from agent_core.llm_provider import BaseLLMProvider, get_llm_provider
 from agent_core.rag_chain import get_context
 
+
+DEFAULT_QA_SYSTEM_PROMPT = (
+    "You are the EduAI course assistant. Answer accurately, concisely, and with clear next steps."
+)
+DEFAULT_GRADING_SYSTEM_PROMPT = (
+    "You are the EduAI grading assistant. Return structured grading output that can be rendered directly."
+)
+
+
 @dataclass
 class AgentConfig:
-    """Agent基础配置"""
+    """Runtime configuration shared by all EduAI agents."""
+
     name: str = "EduAgent"
     course_id: int = 0
-    system_prompt: str = "你是一个智能教学助手。"
-    llm_provider: str = "dashscope" # 后续应当扩展为 可选 provider 模型
+    system_prompt: str = DEFAULT_QA_SYSTEM_PROMPT
+    llm_provider: str = "dashscope"
     llm_model: str = "qwen-max"
     temperature: float = 0.7
     max_tokens: int = 2048
-    tools: list[str] = field(default_factory=list) # 可选工具列表，后续可扩展为更复杂的工具配置
+    tools: list[str] = field(default_factory=list)
+
+
+def sanitize_history(history: list[dict] | None, *, max_messages: int = 12) -> list[dict[str, str]]:
+    """Keep only valid recent user/assistant messages before calling the LLM."""
+
+    if not history:
+        return []
+
+    output: list[dict[str, str]] = []
+    for item in history[-max_messages:]:
+        role = item.get("role")
+        content = str(item.get("content") or "").strip()
+        if role in {"user", "assistant"} and content:
+            output.append({"role": role, "content": content})
+    return output
+
+
+def build_qa_system_prompt(base_prompt: str, retrieved_context: str) -> str:
+    """Build the RAG-grounded system prompt used by QAAgent."""
+
+    if not retrieved_context.strip():
+        return (
+            f"{base_prompt}\n\n"
+            "No course material was retrieved for this question. Say clearly that the material does not "
+            "explicitly provide the answer, then answer cautiously from general course knowledge."
+        )
+
+    return (
+        f"{base_prompt}\n\n"
+        "Use the following course material as the primary source for the answer:\n\n"
+        f"{retrieved_context}\n\n"
+        "Answer requirements:\n"
+        "1. Prefer concepts, steps, terms, and conclusions that appear in the material.\n"
+        "2. If the material gives a procedure, answer in that procedure instead of general advice.\n"
+        "3. Do not invent rules, facts, data, or conclusions not present in the material.\n"
+        "4. If the material is insufficient, explicitly say the material does not clearly provide it.\n"
+        "5. Keep the answer concise and concrete."
+    )
+
+
+def _safe_json_object(raw_text: str) -> dict[str, Any]:
+    text = raw_text.strip()
+    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1).strip()
+    else:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            text = text[start : end + 1]
+
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError("LLM output must be a JSON object")
+    return data
+
+
+def _safe_json_array(raw_text: str) -> list[dict[str, Any]]:
+    text = raw_text.strip()
+    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1).strip()
+    else:
+        start = text.find("[")
+        end = text.rfind("]")
+        if start >= 0 and end > start:
+            text = text[start : end + 1]
+
+    data = json.loads(text)
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if isinstance(data, dict) and isinstance(data.get("exercises"), list):
+        return [item for item in data["exercises"] if isinstance(item, dict)]
+    raise ValueError("LLM output must be a JSON array")
+
+
+def _normalize_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def _normalize_score(value: Any, max_score: float) -> float:
+    try:
+        if isinstance(value, str):
+            match = re.search(r"-?\d+(?:\.\d+)?", value)
+            numeric = float(match.group(0)) if match else 0.0
+        else:
+            numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = 0.0
+    return round(min(max(numeric, 0.0), max_score), 2)
+
+
+def normalize_agent_grading_result(data: dict[str, Any] | None, *, max_score: float) -> dict[str, Any]:
+    """Normalize GradingAgent output into the contract used by downstream modules."""
+
+    data = data if isinstance(data, dict) else {}
+    annotations = data.get("annotations")
+    if not isinstance(annotations, list):
+        annotations = []
+
+    normalized_annotations: list[dict[str, Any]] = []
+    for item in annotations:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or item.get("comment") or item.get("message") or "").strip()
+        if not content:
+            continue
+        position = item.get("position") if isinstance(item.get("position"), dict) else {}
+        normalized_annotations.append(
+            {
+                "annotation_type": str(item.get("annotation_type") or item.get("type") or "suggestion"),
+                "position": {"type": "text", **position},
+                "content": content,
+                "severity": str(item.get("severity") or item.get("level") or "medium"),
+                "knowledge_point_id": item.get("knowledge_point_id"),
+            }
+        )
+
+    knowledge_scores = data.get("knowledge_point_scores")
+    if not isinstance(knowledge_scores, dict):
+        knowledge_scores = {}
+
+    return {
+        "score": _normalize_score(data.get("score"), max_score),
+        "max_score": max_score,
+        "overall_comment": str(data.get("overall_comment") or data.get("comment") or "Automatic grading completed.").strip(),
+        "strengths": _normalize_string_list(data.get("strengths")),
+        "weaknesses": _normalize_string_list(data.get("weaknesses")),
+        "annotations": normalized_annotations,
+        "knowledge_point_scores": {
+            str(key): _normalize_score(value, 100.0)
+            for key, value in knowledge_scores.items()
+        },
+        "source": str(data.get("source") or "llm"),
+    }
 
 
 class EduAgentBase(ABC):
-    """教育Agent基类 - 所有课程Agent继承此类"""
+    """Base class for course agents."""
 
     def __init__(self, config: AgentConfig):
-        """初始化Agent,加载LLM提供者"""
         self.config = config
         self.llm: BaseLLMProvider = get_llm_provider(config.llm_provider, config.llm_model)
-        self._tools: dict = {}
+        self._tools: dict[str, dict[str, Any]] = {}
 
-    def register_tool(self, name: str, func, description: str = ""):
-        """注册自定义工具 未来可能扩展支持工具调用"""
+    def register_tool(self, name: str, func, description: str = "") -> None:
         self._tools[name] = {"func": func, "description": description}
 
-    async def chat(self, query: str, history: list[dict] = None, context: dict = None) -> str:
-        """负责通话调用 - 智能答疑 - 子类可重写以实现RAG等增强逻辑"""
+    async def chat(self, query: str, history: list[dict] | None = None, context: dict | None = None) -> str:
         messages = [{"role": "system", "content": self.config.system_prompt}]
-        if history:
-            messages.extend(history)
+        messages.extend(sanitize_history(history))
         messages.append({"role": "user", "content": query})
         return await self.llm.chat(messages, temperature=self.config.temperature, max_tokens=self.config.max_tokens)
 
-    async def chat_stream(self, query: str, history: list[dict] = None, context: dict = None):
-        """流式智能答疑 用于实现边生成边展示的交互体验 - 子类可重写以实现RAG等增强逻辑"""
+    async def chat_stream(self, query: str, history: list[dict] | None = None, context: dict | None = None):
         messages = [{"role": "system", "content": self.config.system_prompt}]
-        if history:
-            messages.extend(history)
+        messages.extend(sanitize_history(history))
         messages.append({"role": "user", "content": query})
         async for chunk in self.llm.chat_stream(
             messages, temperature=self.config.temperature, max_tokens=self.config.max_tokens
@@ -50,81 +201,121 @@ class EduAgentBase(ABC):
             yield chunk
 
     async def grade(self, submission_content: str, assignment_info: dict) -> dict:
-        """作业批改 - 子类应重写""" 
-        return {"score": 0, 
-                "max_score": assignment_info.get("max_score", 100) if assignment_info else 100,
-                "comment": "批改功能待实现",
-                "strengths": [],
-                "weaknesses": [],
-                "annotations": []
+        return {
+            "score": 0,
+            "max_score": float(assignment_info.get("max_score", 100) if assignment_info else 100),
+            "overall_comment": "This agent does not implement grading.",
+            "strengths": [],
+            "weaknesses": [],
+            "annotations": [],
+            "knowledge_point_scores": {},
+            "source": "fallback",
         }
 
     async def analyze_learning(self, student_id: int, course_id: int) -> dict:
-        """学情分析 - 子类可重写"""
-        # TODO: 实现默认学情分析
         return {"mastery": {}, "weak_points": [], "suggestions": []}
 
     async def generate_exercise(self, knowledge_points: list, difficulty: int = 2, count: int = 5) -> list[dict]:
-        """生成练习题 - 子类可重写"""
-        # TODO: 实现默认练习生成
         return []
 
     @classmethod
     def from_config(cls, config_dict: dict) -> "EduAgentBase":
-        """从配置字典创建Agent实例 方便从数据库中调用config创建Agent"""
-        config = AgentConfig(**config_dict)
-        return cls(config)
+        return cls(AgentConfig(**config_dict))
 
 
 class QAAgent(EduAgentBase):
-    """答疑Agent - 基于RAG的课程答疑"""
+    """Course Q&A agent with RAG grounding."""
 
-    def __init__(self, config: AgentConfig):
-        super().__init__(config) 
-
-    async def chat(self, query: str, history: list[dict] = None, context: dict = None) -> str:
-        """先查询课程资料 后面接着聊天生成回答 - 实现RAG增强的答疑逻辑"""
+    async def _build_messages(
+        self,
+        *,
+        query: str,
+        history: list[dict] | None = None,
+        context: dict | None = None,
+    ) -> list[dict[str, str]]:
         db = context["db"] if context and "db" in context else None
         retrieved_context = ""
         if db is not None and self.config.course_id:
-            retrieved_context = await get_context(
-                db=db,
-                course_id=self.config.course_id,
-                query=query,
-            )
-        system_prompt = self.config.system_prompt
-        if retrieved_context:
-            system_prompt = (
-                f"{self.config.system_prompt}\n\n"
-                "以下是与当前问题相关的课程资料，请严格依据资料回答。\n"
-                "回答要求：\n"
-                "1. 优先使用资料中已有的概念、步骤、术语和结论。\n"
-                "2. 如果资料给出了操作步骤，优先按步骤回答，不要泛化成通用教程。\n"
-                "3. 不要补充资料中没有明确出现的做法、规则或结论。\n"
-                "4. 如果资料不足以支持完整回答，必须明确说明“资料未明确提供”。\n"
-                "5. 回答尽量简洁、具体，避免空泛总结。\n\n"
-                f"课程资料：\n{retrieved_context}"
-            )
+            retrieved_context = await get_context(db=db, course_id=self.config.course_id, query=query)
 
-        messages = [{"role": "system", "content": system_prompt}]
-        if history:
-            messages.extend(history)
+        messages = [{"role": "system", "content": build_qa_system_prompt(self.config.system_prompt, retrieved_context)}]
+        messages.extend(sanitize_history(history))
         messages.append({"role": "user", "content": query})
+        return messages
 
+    async def chat(self, query: str, history: list[dict] | None = None, context: dict | None = None) -> str:
+        messages = await self._build_messages(query=query, history=history, context=context)
         return await self.llm.chat(messages, temperature=self.config.temperature, max_tokens=self.config.max_tokens)
+
+    async def chat_stream(self, query: str, history: list[dict] | None = None, context: dict | None = None):
+        messages = await self._build_messages(query=query, history=history, context=context)
+        async for chunk in self.llm.chat_stream(
+            messages, temperature=self.config.temperature, max_tokens=self.config.max_tokens
+        ):
+            yield chunk
 
 
 class GradingAgent(EduAgentBase):
-    """批改Agent - 作业智能批改"""
+    """Assignment grading agent that returns a stable structured payload."""
 
     async def grade(self, submission_content: str, assignment_info: dict) -> dict:
-        # TODO: 实现精细化批改逻辑
-        return await super().grade(submission_content, assignment_info)
+        assignment_info = assignment_info or {}
+        max_score = float(assignment_info.get("max_score") or 100)
+        prompt_payload = {
+            "assignment": {
+                "title": assignment_info.get("title"),
+                "description": assignment_info.get("description"),
+                "assignment_type": assignment_info.get("assignment_type"),
+                "max_score": max_score,
+                "rubric": assignment_info.get("rubric"),
+                "reference_answer": assignment_info.get("reference_answer"),
+                "knowledge_points": assignment_info.get("knowledge_points") or [],
+            },
+            "submission_content": submission_content,
+        }
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"{self.config.system_prompt or DEFAULT_GRADING_SYSTEM_PROMPT}\n"
+                    "Return only a JSON object with: score, overall_comment, strengths, weaknesses, "
+                    "annotations, knowledge_point_scores."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Grade the assignment according to the assignment description, rubric, reference answer, "
+                    "and student submission.\n"
+                    "Each annotation must contain annotation_type, position, content, severity, and "
+                    "knowledge_point_id.\n"
+                    "Use position.quote when possible so the frontend can locate the feedback.\n\n"
+                    f"{json.dumps(prompt_payload, ensure_ascii=False)}"
+                ),
+            },
+        ]
+        raw = await self.llm.chat(messages, temperature=0.2, max_tokens=self.config.max_tokens)
+        return normalize_agent_grading_result(_safe_json_object(raw), max_score=max_score)
 
 
 class ExerciseAgent(EduAgentBase):
-    """练习Agent - 个性化练习生成"""
+    """Exercise-generation agent interface."""
 
     async def generate_exercise(self, knowledge_points: list, difficulty: int = 2, count: int = 5) -> list[dict]:
-        # TODO: 实现练习生成逻辑
-        return await super().generate_exercise(knowledge_points, difficulty, count)
+        payload = {
+            "knowledge_points": knowledge_points,
+            "difficulty": difficulty,
+            "count": count,
+        }
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Return only a JSON array. Each item must contain question, options, answer, "
+                    "explanation, knowledge_point_ids, difficulty."
+                ),
+            },
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
+        raw = await self.llm.chat(messages, temperature=0.3, max_tokens=self.config.max_tokens)
+        return _safe_json_array(raw)
