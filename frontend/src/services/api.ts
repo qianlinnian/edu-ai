@@ -28,6 +28,90 @@ api.interceptors.response.use(
   }
 )
 
+export type SSEChunkCallback = (content: string) => void
+export type SSEDoneCallback = (sessionId: number, messageId: number) => void
+export type SSEErrorCallback = (detail: string) => void
+
+export interface SSECallbacks {
+  onChunk: SSEChunkCallback
+  onDone: SSEDoneCallback
+  onError: SSEErrorCallback
+}
+
+export function createAbortController(): AbortController {
+  return new AbortController()
+}
+
+export function fetchSSE(
+  url: string,
+  body: Record<string, unknown>,
+  callbacks: SSECallbacks,
+  abortSignal?: AbortSignal,
+  timeoutMs?: number
+): void {
+  const token = useAuthStore.getState().token
+
+  const controller = new AbortController()
+  const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null
+
+  // 监听外部 abort 信号，传递到本地 controller
+  if (abortSignal) {
+    abortSignal.addEventListener('abort', () => controller.abort())
+  }
+
+  fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  }).then(async (response) => {
+    if (timeoutId) clearTimeout(timeoutId)
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }))
+      callbacks.onError(err.detail || `HTTP ${response.status}`)
+      return
+    }
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    const read = () => {
+      reader.read().then(({ done, value }) => {
+        if (done) return
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed.startsWith('data:')) continue
+          try {
+            const data = JSON.parse(trimmed.slice(5).trim())
+            if (data.type === 'chunk') {
+              callbacks.onChunk(data.content ?? '')
+            } else if (data.type === 'done') {
+              callbacks.onDone(data.session_id, data.message_id)
+            } else if (data.type === 'error') {
+              callbacks.onError(data.detail ?? 'Unknown error')
+            }
+          } catch {
+            // ignore parse error
+          }
+        }
+        read()
+      })
+    }
+    read()
+  }).catch((err: Error) => {
+    if (timeoutId) clearTimeout(timeoutId)
+    if (err.name === 'AbortError') return
+    callbacks.onError(err.message || 'Network error')
+  })
+}
+
 export default api
 
 // ===== Auth API =====

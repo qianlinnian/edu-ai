@@ -10,6 +10,21 @@ import { useAuthStore } from '../../hooks/useAuthStore'
 
 type StudentTodo = { id: number; name: string; course: string; ddl?: string }
 type Course = { id: number; name: string; code?: string; description?: string | null; domain?: string }
+type MasteryItem = {
+  knowledge_unit?: { id: number; name: string; difficulty?: number }
+  knowledge_point?: string
+  knowledge_point_id?: number
+  mastery?: number
+  mastery_score?: number
+  score?: number
+  label?: string
+  name?: string
+}
+
+const toPercent = (value?: number) => {
+  const numeric = Number(value ?? 0)
+  return Math.round(numeric <= 1 ? numeric * 100 : numeric)
+}
 
 const submitTrendOption = {
   tooltip: { trigger: 'axis' },
@@ -141,9 +156,9 @@ export default function Dashboard() {
         analyticsAPI.getAlerts(activeCourseId).catch(() => ({ data: [] })),
         assignmentAPI.list(activeCourseId).catch(() => ({ data: [] })),
       ])
-      const mappedMastery = (masteryRes.data || []).map((item: any) => ({
-        label: item.knowledge_point || item.label || item.name || `知识点${item.knowledge_point_id ?? ''}`,
-        value: Number(item.mastery ?? item.score ?? 0),
+      const mappedMastery = (masteryRes.data || []).map((item: MasteryItem) => ({
+        label: item.knowledge_unit?.name || item.knowledge_point || item.label || item.name || `知识点 ${item.knowledge_point_id ?? item.knowledge_unit?.id ?? ''}`,
+        value: toPercent(item.mastery_score ?? item.mastery ?? item.score),
       }))
       const sourceCourses = courseList || courses
       const mappedTodos = (assignmentRes.data || []).map((item: any) => ({
