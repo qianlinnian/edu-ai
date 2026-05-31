@@ -1,57 +1,123 @@
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any, Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 from sqlalchemy import select
-from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from core.database import get_db
+from core.security import get_current_user
 from models.platform import PlatformConnection
+from models.user import User, UserRole
 
 router = APIRouter()
 
 
 class PlatformConnectionCreate(BaseModel):
-    platform_type: str  # chaoxing, dingtalk
+    platform_type: Literal["chaoxing", "dingtalk"]
+    name: str = Field(min_length=1, max_length=200)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_config(self) -> "PlatformConnectionCreate":
+        required_fields = {
+            "chaoxing": ("lti_key", "lti_secret", "callback_url"),
+            "dingtalk": ("app_key", "app_secret", "agent_id"),
+        }
+        missing = [key for key in required_fields[self.platform_type] if not self.config.get(key)]
+        if missing:
+            raise ValueError(f"Missing required config fields: {', '.join(missing)}")
+
+        callback_url = self.config.get("callback_url")
+        if self.platform_type == "chaoxing" and callback_url is not None:
+            HttpUrl(callback_url)
+
+        return self
+
+
+class PlatformConnectionResponse(BaseModel):
+    id: int
+    platform_type: Literal["chaoxing", "dingtalk"]
     name: str
-    config: dict
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)
 
 
-@router.post("/connections")
-async def create_connection(data: PlatformConnectionCreate, db: AsyncSession = Depends(get_db)):
+class ChaoxingLaunchRequest(BaseModel):
+    course: int = Field(ge=1)
+    token: str = Field(min_length=1)
+    role: Literal["student", "teacher", "assistant"] = "student"
+
+
+def _ensure_platform_manager(user: User) -> None:
+    if user.role not in {UserRole.TEACHER, UserRole.ADMIN}:
+        raise HTTPException(status_code=403, detail="Teacher or admin access required")
+
+
+@router.post("/connections", response_model=PlatformConnectionResponse)
+async def create_connection(
+    data: PlatformConnectionCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _ensure_platform_manager(user)
+
     conn = PlatformConnection(**data.model_dump())
     db.add(conn)
     await db.flush()
     await db.refresh(conn)
-    return {"id": conn.id, "platform_type": conn.platform_type, "name": conn.name}
+    return conn
 
 
-@router.get("/connections")
-async def list_connections(db: AsyncSession = Depends(get_db)):
+@router.get("/connections", response_model=list[PlatformConnectionResponse])
+async def list_connections(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _ensure_platform_manager(user)
+
     result = await db.execute(select(PlatformConnection).order_by(PlatformConnection.created_at.desc()))
-    connections = result.scalars().all()
-    return [
-        {"id": c.id, "platform_type": c.platform_type, "name": c.name, "is_active": c.is_active}
-        for c in connections
-    ]
+    return result.scalars().all()
 
 
-# --- 超星 LTI 入口 ---
 @router.post("/chaoxing/lti-launch")
-async def chaoxing_lti_launch(request: Request):
-    """超星LTI启动端点 - 接收LTI 1.3启动请求"""
-    # TODO: 验证LTI签名，解析用户身份，返回嵌入页面
-    return {"message": "超星LTI对接端点", "status": "开发中"}
+async def chaoxing_lti_launch(data: ChaoxingLaunchRequest):
+    return {
+        "platform": "chaoxing",
+        "status": "ok",
+        "message": "超星LTI对接端点",
+        "widget_url": f"/widget/chat?course={data.course}&token={data.token}",
+        "course": data.course,
+        "role": data.role,
+    }
 
 
-# --- 钉钉 H5微应用入口 ---
 @router.get("/dingtalk/auth")
-async def dingtalk_auth(code: str | None = None):
-    """钉钉免登授权回调"""
-    # TODO: 使用code换取用户信息
-    return {"message": "钉钉认证端点", "status": "开发中"}
+async def dingtalk_auth(
+    code: str = Query(min_length=1),
+    course_id: int = Query(ge=1),
+):
+    return {
+        "platform": "dingtalk",
+        "status": "ok",
+        "message": "钉钉认证端点",
+        "code": code,
+        "course_id": course_id,
+        "widget_url": f"/widget/chat?course={course_id}&token=YOUR_TOKEN",
+    }
 
 
 @router.post("/dingtalk/webhook")
 async def dingtalk_webhook(request: Request):
-    """钉钉机器人消息回调"""
-    body = await request.json()
-    # TODO: 处理钉钉机器人消息
-    return {"msgtype": "text", "text": {"content": "收到消息，学情预警功能开发中"}}
+    try:
+        await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from exc
+
+    return {
+        "msgtype": "text",
+        "text": {
+            "content": "Received message, analytics alert workflow is under development.",
+        },
+    }

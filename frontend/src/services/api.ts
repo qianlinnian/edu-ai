@@ -109,6 +109,22 @@ export const exerciseAPI = {
 export const agentAPI = {
   listTemplates: () => api.get('/agents/templates'),
   listInstances: (courseId?: number) => api.get('/agents/instances', { params: { course_id: courseId } }),
+  getInstance: (id: number) => api.get(`/agents/instances/${id}`),
   createInstance: (data: any) => api.post('/agents/instances', data),
+  updateInstance: (id: number, data: any) => api.put(`/agents/instances/${id}`, data),
+  publishInstance: (id: number) => api.post(`/agents/instances/${id}/publish`),
+  listWorkflows: (agentId: number) => api.get('/agents/workflows', { params: { agent_id: agentId } }),
+  getWorkflow: (id: number) => api.get(`/agents/workflows/${id}`),
   createWorkflow: (data: any) => api.post('/agents/workflows', data),
+  updateWorkflow: (id: number, data: any) => api.put(`/agents/workflows/${id}`, data),
+  publishWorkflow: (id: number) => api.post(`/agents/workflows/${id}/publish`),
+}
+
+// ===== Platform API =====
+export const platformAPI = {
+  listConnections: () => api.get('/platform/connections'),
+  createConnection: (data: any) => api.post('/platform/connections', data),
+  launchChaoxing: (data: { course: number; token: string; role: 'student' | 'teacher' | 'assistant' }) =>
+    api.post('/platform/chaoxing/lti-launch', data),
+  dingtalkAuth: (params: { code: string; course_id: number }) => api.get('/platform/dingtalk/auth', { params }),
 }
