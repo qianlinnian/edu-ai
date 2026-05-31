@@ -8,6 +8,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 import { Card, Button, Input, Select, Form, Drawer, Tag, message, Space } from 'antd'
 import { SaveOutlined, PlayCircleOutlined, EyeOutlined, PlusOutlined } from '@ant-design/icons'
+import { agentAPI } from '../../services/api'
 
 const NODE_TYPES_CONFIG = [
   { type: 'input_node', label: '用户输入', color: '#6366f1', icon: '💬' },
@@ -89,8 +90,23 @@ export default function AgentBuilder() {
     setNodes(nds => [...nds, n])
   }
 
-  const handleSave = () => message.success('Agent工作流已保存')
-  const handlePublish = () => message.success('Agent已发布，可在课程中使用')
+  const handleSave = async () => {
+    try {
+      const result = await agentAPI.saveAndPublish(nodes, edges, agentName)
+      message.success(`Agent 已保存 (ID: ${result.instanceId})`)
+    } catch (err: any) {
+      message.error(`保存失败: ${err.message}`)
+    }
+  }
+
+  const handlePublish = async () => {
+    try {
+      const result = await agentAPI.saveAndPublish(nodes, edges, agentName)
+      message.success(`Agent 已发布 (实例ID: ${result.instanceId}, 工作流ID: ${result.workflowId})`)
+    } catch (err: any) {
+      message.error(`发布失败: ${err.message}`)
+    }
+  }
 
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 160px)', gap: 0, borderRadius: 12, overflow: 'hidden', border: '1px solid #f0f0f0' }}>

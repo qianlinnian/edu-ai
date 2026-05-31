@@ -54,6 +54,7 @@ async def create_agent(
     agent = AgentInstance(**data.model_dump(), created_by=user.id)
     db.add(agent)
     await db.flush()
+    await db.commit()
     await db.refresh(agent)
     return agent
 
@@ -78,8 +79,9 @@ async def get_agent(agent_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/workflows")
 async def create_workflow(data: AgentWorkflowCreate, db: AsyncSession = Depends(get_db)):
-    workflow = AgentWorkflow(**data.model_dump())
+    workflow = AgentWorkflow(**data.model_dump(), is_active=True)
     db.add(workflow)
     await db.flush()
+    await db.commit()
     await db.refresh(workflow)
     return {"id": workflow.id, "name": workflow.name}

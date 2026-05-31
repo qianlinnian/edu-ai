@@ -68,6 +68,16 @@ export const courseAPI = {
 export const chatAPI = {
   send: (data: { agent_id: number; course_id: number; session_id?: number; message: string }) =>
     api.post('/chat/send', data),
+  sendStream: (data: { agent_id: number; course_id: number; session_id?: number; message: string }) => {
+    return fetch('/api/v1/chat/send-stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${useAuthStore.getState().token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
   listSessions: (courseId?: number) => api.get('/chat/sessions', { params: { course_id: courseId } }),
   getMessages: (sessionId: number) => api.get(`/chat/sessions/${sessionId}/messages`),
   deleteSession: (sessionId: number) => api.delete(`/chat/sessions/${sessionId}`),
@@ -111,4 +121,33 @@ export const agentAPI = {
   listInstances: (courseId?: number) => api.get('/agents/instances', { params: { course_id: courseId } }),
   createInstance: (data: any) => api.post('/agents/instances', data),
   createWorkflow: (data: any) => api.post('/agents/workflows', data),
+  saveAndPublish: async (nodes: any[], edges: any[], agentName: string, courseId: number = 3) => {
+    const workflow_dag = { nodes, edges }
+
+    const instanceData = {
+      template_id: null,
+      course_id: courseId,
+      name: agentName,
+      description: `由 ${agentName} Agent Builder 创建`,
+      system_prompt: `你是一个智能教学助手，负责回答课程相关问题。`,
+      config: {},
+      tools: [],
+      llm_provider: "dashscope",
+      llm_model: "qwen-max",
+    }
+
+    const instanceRes = await api.post('/agents/instances', instanceData)
+    const agentId = instanceRes.data.id
+
+    const workflowData = {
+      agent_id: agentId,
+      name: `${agentName} 工作流`,
+      description: `由 Agent Builder 生成`,
+      workflow_dag,
+    }
+
+    const workflowRes = await api.post('/agents/workflows', workflowData)
+
+    return { instanceId: agentId, workflowId: workflowRes.data.id }
+  },
 }

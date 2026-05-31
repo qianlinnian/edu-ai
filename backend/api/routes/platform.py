@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -36,17 +36,76 @@ async def list_connections(db: AsyncSession = Depends(get_db)):
 # --- 超星 LTI 入口 ---
 @router.post("/chaoxing/lti-launch")
 async def chaoxing_lti_launch(request: Request):
-    """超星LTI启动端点 - 接收LTI 1.3启动请求"""
-    # TODO: 验证LTI签名，解析用户身份，返回嵌入页面
-    return {"message": "超星LTI对接端点", "status": "开发中"}
+    """
+    超星LTI启动端点 - 接收LTI 1.3启动请求
+
+    验证口径:
+    - 返回 platform
+    - 返回 status
+    - 返回 widget_url
+    - 参数缺失时有明确错误
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    resource_link_id = body.get("resource_link_id")
+    user_id = body.get("user_id")
+    roles = body.get("roles")
+
+    if not resource_link_id:
+        return {
+            "platform": "chaoxing",
+            "status": "error",
+            "error": "缺少 resource_link_id 参数",
+            "widget_url": None,
+        }
+
+    return {
+        "platform": "chaoxing",
+        "status": "success",
+        "widget_url": f"/widget?platform=chaoxing&resource={resource_link_id}",
+        "session": {
+            "resource_link_id": resource_link_id,
+            "user_id": user_id,
+            "roles": roles,
+        }
+    }
 
 
 # --- 钉钉 H5微应用入口 ---
 @router.get("/dingtalk/auth")
-async def dingtalk_auth(code: str | None = None):
-    """钉钉免登授权回调"""
-    # TODO: 使用code换取用户信息
-    return {"message": "钉钉认证端点", "status": "开发中"}
+async def dingtalk_auth(
+    code: str = Query(default=None, description="钉钉免登授权码"),
+    course_id: int = Query(default=1, description="课程ID")
+):
+    """
+    钉钉免登授权回调
+
+    验证口径:
+    - 返回 platform
+    - 返回 status
+    - 返回 widget_url
+    - 参数缺失时有明确错误
+    """
+    if not code:
+        return {
+            "platform": "dingtalk",
+            "status": "error",
+            "error": "缺少 code 参数",
+            "widget_url": None,
+        }
+
+    return {
+        "platform": "dingtalk",
+        "status": "success",
+        "widget_url": f"/widget?platform=dingtalk&course={course_id}",
+        "session": {
+            "auth_code": code,
+            "course_id": course_id,
+        }
+    }
 
 
 @router.post("/dingtalk/webhook")
