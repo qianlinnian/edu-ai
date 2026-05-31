@@ -1,10 +1,24 @@
 import { useState, useRef, useEffect } from 'react'
-import { Input, Button, Avatar, Tag } from 'antd'
-import { SendOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons'
+import { Input, Button, Avatar, Tag, Select } from 'antd'
+import { SendOutlined, RobotOutlined, UserOutlined, CloseOutlined } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useSearchParams } from 'react-router-dom'
+import { fetchSSE, createAbortController, courseAPI, agentAPI } from '../../services/api'
+
+interface CourseItem {
+  id: number
+  name: string
+  code: string
+}
+
+interface AgentItem {
+  id: number
+  name: string
+  course_id: number
+  is_active: boolean
+}
 
 interface Message {
   id: number
@@ -13,64 +27,120 @@ interface Message {
   loading?: boolean
 }
 
-const COURSE_NAMES: Record<string, string> = {
-  '1': 'Python程序设计',
-  '2': '数据结构',
-  '3': '高等数学',
-}
-
-const MOCK_REPLY = `好的！我来为你解答这个问题。
-
-根据课程知识库的内容：
-
-\`\`\`python
-# 示例代码
-def greet(name: str) -> str:
-    return f"Hello, {name}!"
-
-print(greet("EduAI"))  # Hello, EduAI!
-\`\`\`
-
-如还有疑问，随时提问！`
-
 export default function Widget() {
   const [searchParams] = useSearchParams()
-  const courseId = searchParams.get('course') ?? '1'
-  const courseName = COURSE_NAMES[courseId] ?? '课程助手'
+  const courseIdParam = searchParams.get('course') ?? '1'
+  const courseId = parseInt(courseIdParam, 10)
+
+  const [courseIdState, setCourseIdState] = useState<number>(courseId)
+  const [courseName, setCourseName] = useState('AI助手')
+  const [courses, setCourses] = useState<CourseItem[]>([])
+  const [loadingCourses, setLoadingCourses] = useState(false)
+  const [agents, setAgents] = useState<AgentItem[]>([])
+  const [loadingAgents, setLoadingAgents] = useState(false)
+  const activeAgentRef = useRef<AgentItem | null>(null)
 
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, role: 'assistant', content: `你好！我是 **${courseName}** 的 AI 助手，有什么可以帮你？` },
   ])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const loadingMsgIdRef = useRef<number>(0)
+  const sessionIdRef = useRef<number | null>(null)
+
+  const loadAgents = (cid: number) => {
+    setLoadingAgents(true)
+    agentAPI.listInstances(cid).then(({ data }: { data: AgentItem[] }) => {
+      setAgents(data)
+      activeAgentRef.current = data.find((a) => a.is_active) ?? data[0] ?? null
+    }).catch(() => {
+      setAgents([])
+      activeAgentRef.current = null
+    }).finally(() => setLoadingAgents(false))
+  }
+
+  useEffect(() => {
+    setLoadingCourses(true)
+    courseAPI.list().then(({ data }) => {
+      setCourses(data)
+      if (data.length > 0) {
+        const matched = data.find((c: CourseItem) => c.id === courseIdState)
+        setCourseName(matched?.name ?? 'AI助手')
+        loadAgents(courseIdState)
+      }
+    }).catch(() => {
+    }).finally(() => setLoadingCourses(false))
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages.length])
+  }, [messages.length, error])
 
-  const send = async () => {
+  const stopStream = () => {
+    abortControllerRef.current?.abort()
+    setStreaming(false)
+  }
+
+  const send = () => {
     const text = input.trim()
     if (!text || streaming) return
+    if (!activeAgentRef.current) {
+      setError('当前课程没有可用答疑 Agent，请先在 Agent Builder 中创建')
+      return
+    }
     setInput('')
+    setError(null)
     setStreaming(true)
 
     const uid = Date.now()
     const aid = uid + 1
+    loadingMsgIdRef.current = aid
     setMessages(p => [
       ...p,
       { id: uid, role: 'user', content: text },
       { id: aid, role: 'assistant', content: '', loading: true },
     ])
 
+    abortControllerRef.current = createAbortController()
     let cur = ''
-    for (const ch of MOCK_REPLY) {
-      await new Promise(r => setTimeout(r, 18))
-      cur += ch
-      const snap = cur
-      setMessages(p => p.map(m => m.id === aid ? { ...m, content: snap, loading: false } : m))
-    }
-    setStreaming(false)
+
+    fetchSSE(
+      '/api/v1/chat/send-stream',
+      {
+        agent_id: activeAgentRef.current.id,
+        course_id: courseIdState,
+        session_id: sessionIdRef.current ?? undefined,
+        message: text,
+      },
+      {
+        onChunk: (content: string) => {
+          cur += content
+          setMessages(p => p.map(m => m.id === loadingMsgIdRef.current ? { ...m, content: cur, loading: false } : m))
+        },
+        onDone: (sessionId: number, messageId: number) => {
+          sessionIdRef.current = sessionId
+          setMessages(p => p.map(m => m.id === loadingMsgIdRef.current ? { ...m, id: messageId, loading: false } : m))
+          setStreaming(false)
+        },
+        onError: (detail: string) => {
+          const isConfigError =
+            (detail && /api.?key|api.?key未配置|API.?key|未设置|not configured/i.test(detail)) ||
+            (detail && /provider|llm|模型/i.test(detail) && /未配置|未设置|not.?found|empty|null|undefined/i.test(detail))
+          const msg = isConfigError
+            ? 'AI 服务配置不完整，请联系管理员配置 LLM API Key（通义千问/DeepSeek/智谱）'
+            : detail
+              ? `请求失败：${detail}`
+              : '后端服务未响应，请检查后端服务是否正常运行'
+          setError(msg)
+          setMessages(p => p.map(m => m.id === loadingMsgIdRef.current ? { ...m, content: msg, loading: false } : m))
+          setStreaming(false)
+        },
+      },
+      abortControllerRef.current.signal
+    )
   }
 
   return (
@@ -85,8 +155,33 @@ export default function Widget() {
       }}>
         <RobotOutlined style={{ color: '#00a8ff', fontSize: 18 }} />
         <span style={{ color: '#fff', fontWeight: 700, fontSize: 14, flex: 1 }}>{courseName} · AI助手</span>
-        <Tag color="green" style={{ fontSize: 10 }}>RAG</Tag>
+        <Select
+          size="small"
+          value={courseIdState}
+          loading={loadingCourses}
+          onChange={(val) => {
+            const matched = courses.find(c => c.id === val)
+            setCourseName(matched?.name ?? 'AI助手')
+            setCourseIdState(val)
+            loadAgents(val)
+            setMessages([{ id: 1, role: 'assistant', content: `你好！我是 AI 助手，有什么可以帮你？` }])
+            sessionIdRef.current = null
+          }}
+          style={{ width: 130 }}
+            options={courses.map((c: CourseItem) => ({ value: c.id, label: c.name }))}
+          placeholder="加载中..."
+        />
+        <Tag color={loadingAgents ? 'processing' : activeAgentRef.current ? 'green' : 'default'} style={{ fontSize: 10 }}>
+          {loadingAgents ? '加载中...' : activeAgentRef.current ? activeAgentRef.current.name : '无 Agent'}
+        </Tag>
       </div>
+
+      {/* 错误提示 */}
+      {error && (
+        <div style={{ padding: '6px 12px', background: '#fff2f0', color: '#cf1322', fontSize: 12 }}>
+          错误：{error}
+        </div>
+      )}
 
       {/* 消息区 */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 12px' }}>
@@ -167,14 +262,22 @@ export default function Widget() {
             style={{ borderRadius: 8, fontSize: 13, flex: 1 }}
             disabled={streaming}
           />
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            onClick={send}
-            loading={streaming}
-            disabled={!input.trim()}
-            style={{ height: 36, width: 44, borderRadius: 8, background: 'linear-gradient(90deg,#00a8ff,#0078d7)', border: 'none' }}
-          />
+          {streaming ? (
+            <Button
+              danger
+              icon={<CloseOutlined />}
+              onClick={stopStream}
+              style={{ height: 36, width: 44, borderRadius: 8 }}
+            />
+          ) : (
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              onClick={send}
+              disabled={!input.trim()}
+              style={{ height: 36, width: 44, borderRadius: 8, background: 'linear-gradient(90deg,#00a8ff,#0078d7)', border: 'none' }}
+            />
+          )}
         </div>
       </div>
     </div>

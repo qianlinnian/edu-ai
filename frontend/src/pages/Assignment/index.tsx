@@ -68,7 +68,7 @@ export default function Assignment() {
     : assignments
 
   const loadAssignments = async (courseList: Course[]) => {
-    const result = await Promise.all(courseList.map(async (course) => {
+    const result = await Promise.allSettled(courseList.map(async (course) => {
       const { data } = await assignmentAPI.list(course.id)
       return data.map((item: AssignmentItem) => ({
         ...item,
@@ -76,7 +76,14 @@ export default function Assignment() {
         courseCode: course.code,
       }))
     }))
-    setAssignments(result.flat())
+    const fulfilled = result
+      .filter((r): r is PromiseFulfilledResult<AssignmentItem[]> => r.status === 'fulfilled')
+      .map(r => r.value)
+    const rejected = result.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (rejected.length > 0) {
+      message.warning(`部分课程作业加载失败（${rejected.length}/${courseList.length} 个课程）`)
+    }
+    setAssignments(fulfilled.flat())
   }
 
   const loadData = async () => {
