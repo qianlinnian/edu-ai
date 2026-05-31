@@ -44,7 +44,7 @@ class FakeDB:
     async def flush(self):
         self.flushed = True
         for index, obj in enumerate(self.added, start=1):
-            if getattr(obj, "id", None) is None:
+            if getattr(obj, 'id', None) is None:
                 obj.id = index
 
     async def refresh(self, obj):
@@ -58,13 +58,13 @@ def make_teacher():
 def make_agent(course_id: int = 9) -> AgentInstance:
     agent = AgentInstance(
         course_id=course_id,
-        name="Demo Agent",
-        description="demo",
-        config={"agent_type": "qa"},
-        system_prompt="You are helpful.",
-        tools=["rag"],
-        llm_provider="dashscope",
-        llm_model="qwen-max",
+        name='Demo Agent',
+        description='demo',
+        config={'agent_type': 'qa'},
+        system_prompt='You are helpful.',
+        tools=['rag'],
+        llm_provider='dashscope',
+        llm_model='qwen-max',
         created_by=7,
     )
     agent.id = 3
@@ -75,9 +75,9 @@ def make_agent(course_id: int = 9) -> AgentInstance:
 def make_workflow(agent_id: int = 3, is_active: bool = False) -> AgentWorkflow:
     workflow = AgentWorkflow(
         agent_id=agent_id,
-        name="Demo Workflow",
-        description="demo",
-        workflow_dag={"nodes": [], "edges": []},
+        name='Demo Workflow',
+        description='demo',
+        workflow_dag={'nodes': [], 'edges': []},
         is_active=is_active,
     )
     workflow.id = 5
@@ -91,13 +91,13 @@ async def test_create_workflow_preserves_workflow_dag(monkeypatch):
     db = FakeDB(results=[FakeResult(scalar=123)])
     payload = agents.AgentWorkflowCreate(
         agent_id=agent.id,
-        name="Saved Workflow",
-        description="persist dag",
-        workflow_dag={"nodes": [{"id": "n1"}], "edges": [{"id": "e1"}]},
+        name='Saved Workflow',
+        description='persist dag',
+        workflow_dag={'nodes': [{'id': 'n1'}], 'edges': [{'id': 'e1'}]},
     )
 
-    monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, '_get_agent_or_404', AsyncMock(return_value=agent))
+    monkeypatch.setattr(agents, '_get_course_or_404', AsyncMock(return_value=course))
 
     result = await agents.create_workflow(data=payload, db=db, user=make_teacher())
 
@@ -114,9 +114,9 @@ async def test_publish_workflow_marks_agent_and_workflow_active(monkeypatch):
     course = SimpleNamespace(id=agent.course_id, teacher_id=7)
     db = FakeDB()
 
-    monkeypatch.setattr(agents, "_get_workflow_or_404", AsyncMock(return_value=workflow))
-    monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, '_get_workflow_or_404', AsyncMock(return_value=workflow))
+    monkeypatch.setattr(agents, '_get_agent_or_404', AsyncMock(return_value=agent))
+    monkeypatch.setattr(agents, '_get_course_or_404', AsyncMock(return_value=course))
 
     result = await agents.publish_workflow(workflow_id=workflow.id, db=db, user=make_teacher())
 
@@ -128,43 +128,43 @@ async def test_publish_workflow_marks_agent_and_workflow_active(monkeypatch):
 
 def test_platform_connection_requires_platform_specific_config():
     platform.PlatformConnectionCreate(
-        platform_type="chaoxing",
-        name="Chaoxing Demo",
+        platform_type='chaoxing',
+        name='Chaoxing Demo',
         config={
-            "lti_key": "demo-lti-key",
-            "lti_secret": "demo-lti-secret",
-            "callback_url": "https://example.com/lti/chaoxing",
+            'lti_key': 'demo-lti-key',
+            'lti_secret': 'demo-lti-secret',
+            'callback_url': 'https://example.com/lti/chaoxing',
         },
     )
 
     with pytest.raises(ValidationError):
         platform.PlatformConnectionCreate(
-            platform_type="dingtalk",
-            name="DingTalk Demo",
-            config={"app_key": "demo-app-key"},
+            platform_type='dingtalk',
+            name='DingTalk Demo',
+            config={'app_key': 'demo-app-key'},
         )
 
 
 @pytest.mark.asyncio
 async def test_platform_mock_endpoints_return_stable_payloads():
     chaoxing_result = await platform.chaoxing_lti_launch(
-        platform.ChaoxingLaunchRequest(course=1, token="TOKEN", role="student")
+        platform.ChaoxingLaunchRequest(course=1, token='TOKEN', role='student'),
+        user=make_teacher(),
     )
-    dingtalk_result = await platform.dingtalk_auth(code="demo-code", course_id=2)
+    dingtalk_result = await platform.dingtalk_auth(code='demo-code', course_id=2, user=make_teacher())
 
-    assert chaoxing_result == {
-        "platform": "chaoxing",
-        "status": "ok",
-        "message": "超星LTI对接端点",
-        "widget_url": "/widget/chat?course=1&token=TOKEN",
-        "course": 1,
-        "role": "student",
-    }
-    assert dingtalk_result == {
-        "platform": "dingtalk",
-        "status": "ok",
-        "message": "钉钉认证端点",
-        "code": "demo-code",
-        "course_id": 2,
-        "widget_url": "/widget/chat?course=2&token=YOUR_TOKEN",
-    }
+    assert chaoxing_result['platform'] == 'chaoxing'
+    assert chaoxing_result['status'] == 'ok'
+    assert chaoxing_result['message'] == 'Chaoxing LTI launch ready'
+    assert chaoxing_result['course'] == 1
+    assert chaoxing_result['role'] == 'student'
+    assert chaoxing_result['token']
+    assert chaoxing_result['widget_url'].startswith('/widget/chat?course=1&token=')
+
+    assert dingtalk_result['platform'] == 'dingtalk'
+    assert dingtalk_result['status'] == 'ok'
+    assert dingtalk_result['message'] == 'DingTalk auth ready'
+    assert dingtalk_result['code'] == 'demo-code'
+    assert dingtalk_result['course_id'] == 2
+    assert dingtalk_result['token']
+    assert dingtalk_result['widget_url'].startswith('/widget/chat?course=2&token=')

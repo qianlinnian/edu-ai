@@ -198,9 +198,17 @@ export default function Chat() {
   }, [selectedCourseItem, selectedAgent, upsertSession, setActiveId])
 
   const removeSession = useCallback(
-    (localId: number, e: React.MouseEvent) => {
+    async (localId: number, e: React.MouseEvent) => {
       e.stopPropagation()
-      storeRemoveSession(localId)
+      const session = useSessionStore.getState().sessions.find((item) => item.localId === localId)
+      try {
+        if (session?.serverSessionId) {
+          await chatAPI.deleteSession(session.serverSessionId)
+        }
+        storeRemoveSession(localId)
+      } catch (err: any) {
+        message.error(err?.response?.data?.detail ?? '删除对话失败，请稍后重试')
+      }
     },
     [storeRemoveSession]
   )
@@ -276,6 +284,7 @@ export default function Chat() {
               ),
             }))
           }
+          abortControllerRef.current = null
           setSending(false)
         },
         onError: (detail: string) => {
@@ -301,6 +310,20 @@ export default function Chat() {
             }))
           }
           message.error(errMsg, 8)
+          abortControllerRef.current = null
+          setSending(false)
+        },
+        onAbort: () => {
+          const sid = useSessionStore.getState().activeId
+          if (sid !== null) {
+            updateSession(sid, (s) => ({
+              ...s,
+              messages: s.messages.map((m: PersistedMessage) =>
+                m.id === loadingMsgIdRef.current ? { ...m, content: '已取消本次回答。', loading: false } : m
+              ),
+            }))
+          }
+          abortControllerRef.current = null
           setSending(false)
         },
       },
@@ -416,7 +439,7 @@ export default function Chat() {
               <Tooltip title="删除">
                 <DeleteOutlined
                   style={{ color: '#ccc', fontSize: 12, flexShrink: 0, marginTop: 2 }}
-                  onClick={(e) => removeSession(session.localId, e)}
+                  onClick={(e) => { void removeSession(session.localId, e) }}
                 />
               </Tooltip>
             </div>

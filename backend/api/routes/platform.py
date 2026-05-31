@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
-from core.security import get_current_user
+from core.security import create_access_token, get_current_user
 from models.platform import PlatformConnection
 from models.user import User, UserRole
 
@@ -82,12 +82,17 @@ async def list_connections(
 
 
 @router.post("/chaoxing/lti-launch")
-async def chaoxing_lti_launch(data: ChaoxingLaunchRequest):
+async def chaoxing_lti_launch(
+    data: ChaoxingLaunchRequest,
+    user: User = Depends(get_current_user),
+):
+    embed_token = create_access_token(data={"sub": str(user.id)})
     return {
         "platform": "chaoxing",
         "status": "ok",
-        "message": "超星LTI对接端点",
-        "widget_url": f"/widget/chat?course={data.course}&token={data.token}",
+        "message": "Chaoxing LTI launch ready",
+        "widget_url": f"/widget/chat?course={data.course}&token={embed_token}",
+        "token": embed_token,
         "course": data.course,
         "role": data.role,
     }
@@ -97,14 +102,17 @@ async def chaoxing_lti_launch(data: ChaoxingLaunchRequest):
 async def dingtalk_auth(
     code: str = Query(min_length=1),
     course_id: int = Query(ge=1),
+    user: User = Depends(get_current_user),
 ):
+    embed_token = create_access_token(data={"sub": str(user.id)})
     return {
         "platform": "dingtalk",
         "status": "ok",
-        "message": "钉钉认证端点",
+        "message": "DingTalk auth ready",
         "code": code,
         "course_id": course_id,
-        "widget_url": f"/widget/chat?course={course_id}&token=YOUR_TOKEN",
+        "widget_url": f"/widget/chat?course={course_id}&token={embed_token}",
+        "token": embed_token,
     }
 
 

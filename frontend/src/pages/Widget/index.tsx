@@ -1,11 +1,12 @@
-import { useState, useRef, useEffect } from 'react'
-import { Input, Button, Avatar, Tag, Select } from 'antd'
-import { SendOutlined, RobotOutlined, UserOutlined, CloseOutlined } from '@ant-design/icons'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Alert, Avatar, Button, Empty, Input, Select, Tag } from 'antd'
+import { CloseOutlined, RobotOutlined, SendOutlined, UserOutlined } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useSearchParams } from 'react-router-dom'
-import { fetchSSE, createAbortController, courseAPI, agentAPI } from '../../services/api'
+import { agentAPI, courseAPI, createAbortController, fetchSSE, getErrorMessage } from '../../services/api'
+import { useAuthStore } from '../../hooks/useAuthStore'
 
 interface CourseItem {
   id: number
@@ -27,53 +28,89 @@ interface Message {
   loading?: boolean
 }
 
+function buildWelcomeMessage(courseName: string): Message {
+  return {
+    id: Date.now(),
+    role: 'assistant',
+    content: `你好，我是 **${courseName}** 的 AI 助手，有什么可以帮你？`,
+  }
+}
+
 export default function Widget() {
   const [searchParams] = useSearchParams()
-  const courseIdParam = searchParams.get('course') ?? '1'
-  const courseId = parseInt(courseIdParam, 10)
+  const queryToken = searchParams.get('token')?.trim() || ''
+  const storeToken = useAuthStore((s) => s.token)
+  const authToken = queryToken || storeToken || ''
+  const courseId = Number(searchParams.get('course') || '1')
 
   const [courseIdState, setCourseIdState] = useState<number>(courseId)
-  const [courseName, setCourseName] = useState('AI助手')
+  const [courseName, setCourseName] = useState('AI 助手')
   const [courses, setCourses] = useState<CourseItem[]>([])
   const [loadingCourses, setLoadingCourses] = useState(false)
   const [agents, setAgents] = useState<AgentItem[]>([])
   const [loadingAgents, setLoadingAgents] = useState(false)
-  const activeAgentRef = useRef<AgentItem | null>(null)
-
-  const [messages, setMessages] = useState<Message[]>([
-    { id: 1, role: 'assistant', content: `你好！我是 **${courseName}** 的 AI 助手，有什么可以帮你？` },
-  ])
+  const [messages, setMessages] = useState<Message[]>([buildWelcomeMessage('AI 助手')])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
   const abortControllerRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const loadingMsgIdRef = useRef<number>(0)
   const sessionIdRef = useRef<number | null>(null)
 
-  const loadAgents = (cid: number) => {
+  const activeAgent = useMemo(
+    () => agents.find((item) => item.is_active) ?? agents[0] ?? null,
+    [agents]
+  )
+
+  const resetConversation = (nextCourseName: string) => {
+    setMessages([buildWelcomeMessage(nextCourseName)])
+    sessionIdRef.current = null
+    setError(null)
+  }
+
+  const loadAgents = async (nextCourseId: number) => {
+    if (!authToken) return
     setLoadingAgents(true)
-    agentAPI.listInstances(cid).then(({ data }: { data: AgentItem[] }) => {
+    try {
+      const { data } = await agentAPI.listInstances(nextCourseId, authToken)
       setAgents(data)
-      activeAgentRef.current = data.find((a) => a.is_active) ?? data[0] ?? null
-    }).catch(() => {
+    } catch (err) {
       setAgents([])
-      activeAgentRef.current = null
-    }).finally(() => setLoadingAgents(false))
+      setError(getErrorMessage(err, '加载课程 Agent 失败'))
+    } finally {
+      setLoadingAgents(false)
+    }
   }
 
   useEffect(() => {
-    setLoadingCourses(true)
-    courseAPI.list().then(({ data }) => {
-      setCourses(data)
-      if (data.length > 0) {
-        const matched = data.find((c: CourseItem) => c.id === courseIdState)
-        setCourseName(matched?.name ?? 'AI助手')
-        loadAgents(courseIdState)
+    if (!authToken) {
+      setError('缺少嵌入访问令牌，请从平台嵌入入口重新打开。')
+      return
+    }
+
+    const loadData = async () => {
+      setLoadingCourses(true)
+      try {
+        const [{ data: courseData }, { data: currentCourse }] = await Promise.all([
+          courseAPI.list(authToken),
+          courseAPI.get(courseIdState, authToken),
+        ])
+        setCourses(courseData)
+        setCourseName(currentCourse.name)
+        resetConversation(currentCourse.name)
+      } catch (err) {
+        setError(getErrorMessage(err, '加载课程信息失败'))
+      } finally {
+        setLoadingCourses(false)
       }
-    }).catch(() => {
-    }).finally(() => setLoadingCourses(false))
-  }, [])
+
+      await loadAgents(courseIdState)
+    }
+
+    void loadData()
+  }, [authToken, courseIdState])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -81,186 +118,225 @@ export default function Widget() {
 
   const stopStream = () => {
     abortControllerRef.current?.abort()
-    setStreaming(false)
   }
 
   const send = () => {
     const text = input.trim()
     if (!text || streaming) return
-    if (!activeAgentRef.current) {
-      setError('当前课程没有可用答疑 Agent，请先在 Agent Builder 中创建')
+    if (!authToken) {
+      setError('缺少嵌入访问令牌，请从平台嵌入入口重新打开。')
       return
     }
+    if (!activeAgent) {
+      setError('当前课程没有可用的答疑 Agent，请联系教师先发布课程 Agent。')
+      return
+    }
+
     setInput('')
     setError(null)
     setStreaming(true)
 
-    const uid = Date.now()
-    const aid = uid + 1
-    loadingMsgIdRef.current = aid
-    setMessages(p => [
-      ...p,
-      { id: uid, role: 'user', content: text },
-      { id: aid, role: 'assistant', content: '', loading: true },
+    const userMessageId = Date.now()
+    const loadingMessageId = userMessageId + 1
+    loadingMsgIdRef.current = loadingMessageId
+
+    setMessages((prev) => [
+      ...prev,
+      { id: userMessageId, role: 'user', content: text },
+      { id: loadingMessageId, role: 'assistant', content: '', loading: true },
     ])
 
     abortControllerRef.current = createAbortController()
-    let cur = ''
+    let contentBuffer = ''
 
     fetchSSE(
       '/api/v1/chat/send-stream',
       {
-        agent_id: activeAgentRef.current.id,
+        agent_id: activeAgent.id,
         course_id: courseIdState,
         session_id: sessionIdRef.current ?? undefined,
         message: text,
       },
       {
-        onChunk: (content: string) => {
-          cur += content
-          setMessages(p => p.map(m => m.id === loadingMsgIdRef.current ? { ...m, content: cur, loading: false } : m))
+        onChunk: (chunk) => {
+          contentBuffer += chunk
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === loadingMsgIdRef.current ? { ...item, content: contentBuffer, loading: false } : item
+            )
+          )
         },
-        onDone: (sessionId: number, messageId: number) => {
+        onDone: (sessionId, messageId) => {
           sessionIdRef.current = sessionId
-          setMessages(p => p.map(m => m.id === loadingMsgIdRef.current ? { ...m, id: messageId, loading: false } : m))
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === loadingMsgIdRef.current ? { ...item, id: messageId, loading: false } : item
+            )
+          )
           setStreaming(false)
         },
-        onError: (detail: string) => {
-          const isConfigError =
-            (detail && /api.?key|api.?key未配置|API.?key|未设置|not configured/i.test(detail)) ||
-            (detail && /provider|llm|模型/i.test(detail) && /未配置|未设置|not.?found|empty|null|undefined/i.test(detail))
-          const msg = isConfigError
-            ? 'AI 服务配置不完整，请联系管理员配置 LLM API Key（通义千问/DeepSeek/智谱）'
-            : detail
-              ? `请求失败：${detail}`
-              : '后端服务未响应，请检查后端服务是否正常运行'
-          setError(msg)
-          setMessages(p => p.map(m => m.id === loadingMsgIdRef.current ? { ...m, content: msg, loading: false } : m))
+        onError: (detail) => {
+          const messageText = detail || '问答失败，请稍后重试'
+          setError(messageText)
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === loadingMsgIdRef.current ? { ...item, content: messageText, loading: false } : item
+            )
+          )
+          setStreaming(false)
+        },
+        onAbort: () => {
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === loadingMsgIdRef.current ? { ...item, content: '已取消本次回答。', loading: false } : item
+            )
+          )
           setStreaming(false)
         },
       },
-      abortControllerRef.current.signal
+      abortControllerRef.current.signal,
+      undefined,
+      authToken
     )
   }
 
   return (
-    <div style={{
-      width: '100%', height: '100vh', display: 'flex', flexDirection: 'column',
-      background: '#fff', fontFamily: 'system-ui, sans-serif',
-    }}>
-      {/* 顶栏 */}
-      <div style={{
-        padding: '10px 14px', background: 'linear-gradient(90deg,#0f1b2d,#1a3a5c)',
-        display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
-      }}>
+    <div
+      style={{
+        width: '100%',
+        height: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#fff',
+        fontFamily: 'system-ui, sans-serif',
+      }}
+    >
+      <div
+        style={{
+          padding: '10px 14px',
+          background: 'linear-gradient(90deg,#0f1b2d,#1a3a5c)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexShrink: 0,
+        }}
+      >
         <RobotOutlined style={{ color: '#00a8ff', fontSize: 18 }} />
-        <span style={{ color: '#fff', fontWeight: 700, fontSize: 14, flex: 1 }}>{courseName} · AI助手</span>
+        <span style={{ color: '#fff', fontWeight: 700, fontSize: 14, flex: 1 }}>{courseName} / AI 助手</span>
         <Select
           size="small"
           value={courseIdState}
           loading={loadingCourses}
-          onChange={(val) => {
-            const matched = courses.find(c => c.id === val)
-            setCourseName(matched?.name ?? 'AI助手')
-            setCourseIdState(val)
-            loadAgents(val)
-            setMessages([{ id: 1, role: 'assistant', content: `你好！我是 AI 助手，有什么可以帮你？` }])
-            sessionIdRef.current = null
+          onChange={(value) => {
+            const nextCourse = courses.find((item) => item.id === value)
+            setCourseIdState(value)
+            setCourseName(nextCourse?.name ?? 'AI 助手')
+            resetConversation(nextCourse?.name ?? 'AI 助手')
           }}
-          style={{ width: 130 }}
-            options={courses.map((c: CourseItem) => ({ value: c.id, label: c.name }))}
-          placeholder="加载中..."
+          style={{ width: 150 }}
+          options={courses.map((item) => ({ value: item.id, label: item.name }))}
+          placeholder="选择课程"
         />
-        <Tag color={loadingAgents ? 'processing' : activeAgentRef.current ? 'green' : 'default'} style={{ fontSize: 10 }}>
-          {loadingAgents ? '加载中...' : activeAgentRef.current ? activeAgentRef.current.name : '无 Agent'}
+        <Tag color={loadingAgents ? 'processing' : activeAgent ? 'green' : 'default'} style={{ fontSize: 10 }}>
+          {loadingAgents ? '加载中' : activeAgent ? activeAgent.name : '无 Agent'}
         </Tag>
       </div>
 
-      {/* 错误提示 */}
       {error && (
-        <div style={{ padding: '6px 12px', background: '#fff2f0', color: '#cf1322', fontSize: 12 }}>
-          错误：{error}
-        </div>
+        <Alert
+          type="error"
+          showIcon
+          message="嵌入问答不可用"
+          description={error}
+          style={{ margin: 12, marginBottom: 0 }}
+        />
       )}
 
-      {/* 消息区 */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 12px' }}>
-        {messages.map(msg => (
-          <div
-            key={msg.id}
-            style={{
-              display: 'flex',
-              flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
-              gap: 8, marginBottom: 14, alignItems: 'flex-start',
-            }}
-          >
-            <Avatar
-              size={28}
-              style={{ background: msg.role === 'assistant' ? '#00a8ff' : '#6366f1', flexShrink: 0 }}
-              icon={msg.role === 'assistant' ? <RobotOutlined /> : <UserOutlined />}
-            />
-            <div style={{
-              maxWidth: '78%',
-              background: msg.role === 'user' ? '#6366f1' : '#f4f4f5',
-              color: msg.role === 'user' ? '#fff' : '#1a1a1a',
-              padding: '8px 12px',
-              borderRadius: msg.role === 'user' ? '14px 4px 14px 14px' : '4px 14px 14px 14px',
-              fontSize: 13, lineHeight: 1.65,
-            }}>
-              {msg.loading ? (
-                <span style={{ display: 'inline-flex', gap: 3 }}>
-                  {[0, 150, 300].map(d => (
-                    <span key={d} style={{
-                      width: 6, height: 6, borderRadius: '50%', background: '#00a8ff',
-                      display: 'inline-block', animation: `bounce 1s ${d}ms infinite`,
-                    }} />
-                  ))}
-                </span>
-              ) : msg.role === 'user' ? (
-                msg.content
-              ) : (
-                <ReactMarkdown
-                  components={{
-                    code({ className, children, ...props }: any) {
-                      const match = /language-(\w+)/.exec(className || '')
-                      return match ? (
-                        <SyntaxHighlighter
-                          style={vscDarkPlus as any}
-                          language={match[1]}
-                          PreTag="div"
-                          customStyle={{ borderRadius: 6, margin: '6px 0', fontSize: 12 }}
-                        >
-                          {String(children).replace(/\n$/, '')}
-                        </SyntaxHighlighter>
-                      ) : (
-                        <code style={{ background: '#e4e4e7', padding: '1px 5px', borderRadius: 3, fontSize: '0.9em' }} {...props}>
-                          {children}
-                        </code>
-                      )
-                    },
-                  }}
-                >
-                  {msg.content}
-                </ReactMarkdown>
-              )}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+        {messages.length === 0 ? (
+          <Empty description="暂无消息" />
+        ) : (
+          messages.map((message) => (
+            <div
+              key={message.id}
+              style={{
+                display: 'flex',
+                flexDirection: message.role === 'user' ? 'row-reverse' : 'row',
+                gap: 8,
+                marginBottom: 14,
+                alignItems: 'flex-start',
+              }}
+            >
+              <Avatar
+                size={28}
+                style={{ background: message.role === 'assistant' ? '#00a8ff' : '#6366f1', flexShrink: 0 }}
+                icon={message.role === 'assistant' ? <RobotOutlined /> : <UserOutlined />}
+              />
+              <div
+                style={{
+                  maxWidth: '78%',
+                  background: message.role === 'user' ? '#6366f1' : '#f4f4f5',
+                  color: message.role === 'user' ? '#fff' : '#1a1a1a',
+                  padding: '8px 12px',
+                  borderRadius: message.role === 'user' ? '14px 4px 14px 14px' : '4px 14px 14px 14px',
+                  fontSize: 13,
+                  lineHeight: 1.65,
+                }}
+              >
+                {message.loading ? (
+                  <span style={{ color: '#777' }}>正在生成回答...</span>
+                ) : message.role === 'user' ? (
+                  message.content
+                ) : (
+                  <ReactMarkdown
+                    components={{
+                      code({ className, children, ...props }: any) {
+                        const match = /language-(\w+)/.exec(className || '')
+                        return match ? (
+                          <SyntaxHighlighter
+                            style={vscDarkPlus as any}
+                            language={match[1]}
+                            PreTag="div"
+                            customStyle={{ borderRadius: 6, margin: '6px 0', fontSize: 12 }}
+                          >
+                            {String(children).replace(/\n$/, '')}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code
+                            style={{ background: '#e4e4e7', padding: '1px 5px', borderRadius: 3, fontSize: '0.9em' }}
+                            {...props}
+                          >
+                            {children}
+                          </code>
+                        )
+                      },
+                    }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
         <div ref={bottomRef} />
       </div>
 
-      {/* 输入区 */}
       <div style={{ padding: '8px 10px 10px', borderTop: '1px solid #f0f0f0', flexShrink: 0 }}>
-        <style>{`@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-5px)}}`}</style>
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
           <Input.TextArea
             value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-            placeholder="输入问题…"
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                send()
+              }
+            }}
+            placeholder="输入问题..."
             autoSize={{ minRows: 1, maxRows: 3 }}
             style={{ borderRadius: 8, fontSize: 13, flex: 1 }}
-            disabled={streaming}
+            disabled={streaming || !authToken}
           />
           {streaming ? (
             <Button
@@ -274,8 +350,14 @@ export default function Widget() {
               type="primary"
               icon={<SendOutlined />}
               onClick={send}
-              disabled={!input.trim()}
-              style={{ height: 36, width: 44, borderRadius: 8, background: 'linear-gradient(90deg,#00a8ff,#0078d7)', border: 'none' }}
+              disabled={!input.trim() || !authToken}
+              style={{
+                height: 36,
+                width: 44,
+                borderRadius: 8,
+                background: 'linear-gradient(90deg,#00a8ff,#0078d7)',
+                border: 'none',
+              }}
             />
           )}
         </div>
@@ -283,4 +365,3 @@ export default function Widget() {
     </div>
   )
 }
-

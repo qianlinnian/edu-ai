@@ -6,37 +6,55 @@ const api = axios.create({
   timeout: 30000,
 })
 
-// 请求拦截：自动携带token
+type RequestConfig = {
+  headers?: Record<string, string>
+  params?: Record<string, unknown>
+  responseType?: 'blob'
+}
+
+type SSEChunkCallback = (content: string) => void
+type SSEDoneCallback = (sessionId: number, messageId: number) => void
+type SSEErrorCallback = (detail: string) => void
+type SSEAbortCallback = () => void
+
+export interface SSECallbacks {
+  onChunk: SSEChunkCallback
+  onDone: SSEDoneCallback
+  onError: SSEErrorCallback
+  onAbort?: SSEAbortCallback
+}
+
+function buildAuthConfig(authToken?: string, config: RequestConfig = {}): RequestConfig {
+  if (!authToken) return config
+  return {
+    ...config,
+    headers: {
+      ...(config.headers ?? {}),
+      Authorization: `Bearer ${authToken}`,
+    },
+  }
+}
+
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token
-  if (token) {
+  if (token && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
 
-// 响应拦截：401自动登出
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     const requestPath = error.config?.url || ''
-    if (error.response?.status === 401 && !requestPath.includes('/auth/login')) {
+    const isWidgetPage = typeof window !== 'undefined' && window.location.pathname.startsWith('/widget/')
+    if (error.response?.status === 401 && !requestPath.includes('/auth/login') && !isWidgetPage) {
       useAuthStore.getState().logout()
       window.location.href = '/login'
     }
     return Promise.reject(error)
   }
 )
-
-export type SSEChunkCallback = (content: string) => void
-export type SSEDoneCallback = (sessionId: number, messageId: number) => void
-export type SSEErrorCallback = (detail: string) => void
-
-export interface SSECallbacks {
-  onChunk: SSEChunkCallback
-  onDone: SSEDoneCallback
-  onError: SSEErrorCallback
-}
 
 export function createAbortController(): AbortController {
   return new AbortController()
@@ -47,16 +65,15 @@ export function fetchSSE(
   body: Record<string, unknown>,
   callbacks: SSECallbacks,
   abortSignal?: AbortSignal,
-  timeoutMs?: number
+  timeoutMs?: number,
+  authToken?: string
 ): void {
-  const token = useAuthStore.getState().token
-
+  const token = authToken || useAuthStore.getState().token || undefined
   const controller = new AbortController()
   const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null
 
-  // 监听外部 abort 信号，传递到本地 controller
   if (abortSignal) {
-    abortSignal.addEventListener('abort', () => controller.abort())
+    abortSignal.addEventListener('abort', () => controller.abort(), { once: true })
   }
 
   fetch(url, {
@@ -75,7 +92,13 @@ export function fetchSSE(
       callbacks.onError(err.detail || `HTTP ${response.status}`)
       return
     }
-    const reader = response.body!.getReader()
+
+    const reader = response.body?.getReader()
+    if (!reader) {
+      callbacks.onError('Empty SSE response body')
+      return
+    }
+
     const decoder = new TextDecoder()
     let buffer = ''
 
@@ -85,6 +108,7 @@ export function fetchSSE(
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop() ?? ''
+
         for (const line of lines) {
           const trimmed = line.trim()
           if (!trimmed.startsWith('data:')) continue
@@ -98,16 +122,27 @@ export function fetchSSE(
               callbacks.onError(data.detail ?? 'Unknown error')
             }
           } catch {
-            // ignore parse error
+            // Ignore malformed SSE frames.
           }
         }
+
         read()
+      }).catch((err: Error) => {
+        if (err.name === 'AbortError') {
+          callbacks.onAbort?.()
+          return
+        }
+        callbacks.onError(err.message || 'Network error')
       })
     }
+
     read()
   }).catch((err: Error) => {
     if (timeoutId) clearTimeout(timeoutId)
-    if (err.name === 'AbortError') return
+    if (err.name === 'AbortError') {
+      callbacks.onAbort?.()
+      return
+    }
     callbacks.onError(err.message || 'Network error')
   })
 }
@@ -152,7 +187,6 @@ export function getErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-// ===== Auth API =====
 export const authAPI = {
   login: (username: string, password: string) => {
     const form = new URLSearchParams()
@@ -165,16 +199,19 @@ export const authAPI = {
   getMe: () => api.get('/auth/me'),
 }
 
-// ===== Course API =====
 export const courseAPI = {
-  list: () => api.get('/courses'),
-  get: (id: number) => api.get(`/courses/${id}`),
+  list: (authToken?: string) => api.get('/courses', buildAuthConfig(authToken)),
+  get: (id: number, authToken?: string) => api.get(`/courses/${id}`, buildAuthConfig(authToken)),
   create: (data: any) => api.post('/courses', data),
   update: (id: number, data: any) => api.put(`/courses/${id}`, data),
   remove: (id: number) => api.delete(`/courses/${id}`),
-  listResources: (courseId: number) => api.get(`/courses/${courseId}/resources`),
-  downloadResource: (courseId: number, resourceId: number) =>
-    api.get(`/courses/${courseId}/resources/${resourceId}/download`, { responseType: 'blob' }),
+  listResources: (courseId: number, authToken?: string) =>
+    api.get(`/courses/${courseId}/resources`, buildAuthConfig(authToken)),
+  downloadResource: (courseId: number, resourceId: number, authToken?: string) =>
+    api.get(
+      `/courses/${courseId}/resources/${resourceId}/download`,
+      buildAuthConfig(authToken, { responseType: 'blob' })
+    ),
   uploadResource: (courseId: number, file: File) => {
     const form = new FormData()
     form.append('file', file)
@@ -186,7 +223,7 @@ export const courseAPI = {
   createKnowledgeUnit: (courseId: number, data: any) => api.post(`/courses/${courseId}/knowledge-units`, data),
   generateKnowledgeUnits: (courseId: number) => api.post(`/courses/${courseId}/knowledge-units/generate`),
 }
-// ===== Chat API =====
+
 export const chatAPI = {
   send: (data: { agent_id: number; course_id: number; session_id?: number; message: string }) =>
     api.post('/chat/send', data),
@@ -196,7 +233,6 @@ export const chatAPI = {
   deleteSession: (sessionId: number) => api.delete(`/chat/sessions/${sessionId}`),
 }
 
-// ===== Assignment API =====
 export const assignmentAPI = {
   list: (courseId: number) => api.get('/assignments', { params: { course_id: courseId } }),
   create: (data: any) => api.post('/assignments', data),
@@ -211,7 +247,6 @@ export const assignmentAPI = {
   getAnnotations: (submissionId: number) => api.get(`/assignments/submissions/${submissionId}/annotations`),
 }
 
-// ===== Analytics API =====
 export const analyticsAPI = {
   getStudentMastery: (studentId: number, courseId: number) =>
     api.get(`/analytics/student/${studentId}/mastery`, { params: { course_id: courseId } }),
@@ -221,17 +256,16 @@ export const analyticsAPI = {
   getAlerts: (courseId?: number) => api.get('/analytics/alerts', { params: { course_id: courseId } }),
 }
 
-// ===== Exercise API =====
 export const exerciseAPI = {
   generate: (data: any) => api.post('/exercises/generate', data),
   attempt: (data: any) => api.post('/exercises/attempt', data),
   listPool: (courseId: number) => api.get('/exercises/pool', { params: { course_id: courseId } }),
 }
 
-// ===== Agent API =====
 export const agentAPI = {
   listTemplates: () => api.get('/agents/templates'),
-  listInstances: (courseId?: number) => api.get('/agents/instances', { params: { course_id: courseId } }),
+  listInstances: (courseId?: number, authToken?: string) =>
+    api.get('/agents/instances', buildAuthConfig(authToken, { params: { course_id: courseId } })),
   getInstance: (id: number) => api.get(`/agents/instances/${id}`),
   createInstance: (data: any) => api.post('/agents/instances', data),
   updateInstance: (id: number, data: any) => api.put(`/agents/instances/${id}`, data),
@@ -243,7 +277,6 @@ export const agentAPI = {
   publishWorkflow: (id: number) => api.post(`/agents/workflows/${id}/publish`),
 }
 
-// ===== Platform API =====
 export const platformAPI = {
   listConnections: () => api.get('/platform/connections'),
   createConnection: (data: any) => api.post('/platform/connections', data),
