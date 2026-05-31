@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+
 from models.assignment import Assignment, Submission
 from workers.grading_task import (
     _fallback_grading,
+    _grade_with_llm,
     _safe_json_loads,
     _standardize_grading_payload,
 )
@@ -132,3 +135,47 @@ def test_fallback_grading_uses_same_result_shape_as_llm() -> None:
     assert isinstance(fallback_result["weaknesses"], list)
     assert isinstance(fallback_result["annotations"], list)
     assert isinstance(fallback_result["knowledge_point_scores"], dict)
+
+
+def test_grade_with_llm_delegates_to_grading_agent_and_keeps_worker_contract(monkeypatch) -> None:
+    captured: dict = {}
+
+    class FakeGradingAgent:
+        def __init__(self, config):
+            captured["config"] = config
+
+        async def grade(self, submission_content: str, assignment_info: dict) -> dict:
+            captured["submission_content"] = submission_content
+            captured["assignment_info"] = assignment_info
+            return {
+                "score": 88,
+                "overall_comment": "agent graded",
+                "strengths": ["clear"],
+                "weaknesses": [],
+                "annotations": [
+                    {
+                        "annotation_type": "warning",
+                        "position": {"quote": "answer"},
+                        "content": "needs detail",
+                        "severity": "high",
+                        "knowledge_point_id": 999,
+                    }
+                ],
+                "knowledge_point_scores": {"999": 50},
+                "source": "llm",
+            }
+
+    monkeypatch.setattr("workers.grading_task.GradingAgent", FakeGradingAgent)
+    assignment = make_assignment(max_score=100.0, knowledge_points=[1])
+    assignment.course_id = 7
+    submission = Submission(content="answer", file_path=None)
+
+    result = asyncio.run(_grade_with_llm(assignment=assignment, submission=submission))
+
+    assert captured["config"].course_id == 7
+    assert captured["assignment_info"]["knowledge_points"] == [1]
+    assert "answer" in captured["submission_content"]
+    assert result["score"] == 88.0
+    assert result["source"] == "llm"
+    assert result["annotations"][0]["knowledge_point_id"] is None
+    assert result["knowledge_point_scores"] == {"1": 88.0}

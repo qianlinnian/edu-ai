@@ -7,18 +7,20 @@ from core.database import get_db
 from core.security import get_current_user
 from education.analytics_engine import refresh_learning_alerts
 from education.exercise_engine import create_attempt_and_update_mastery, generate_targeted_exercises
+from models.course import Course, Enrollment
 from models.exercise import ExercisePool, ExerciseType, GeneratedExercise
-from models.user import User
+from models.user import User, UserRole
 
 router = APIRouter()
 
 
 class ExerciseGenRequest(BaseModel):
     course_id: int
-    knowledge_point_ids: list[int]
+    knowledge_point_ids: list[int] | None = None
     exercise_type: ExerciseType = ExerciseType.CHOICE
     difficulty: int = 2
     count: int = 5
+    use_llm: bool = True
 
 
 class ExerciseAttemptRequest(BaseModel):
@@ -33,19 +35,40 @@ async def generate_exercises(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Generate targeted exercises by course and knowledge points."""
+    """Generate targeted exercises by student learning state and knowledge points."""
+    if user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Only students can generate personalized exercises")
+
+    course = (await db.execute(select(Course).where(Course.id == data.course_id))).scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    enrollment = (
+        await db.execute(
+            select(Enrollment).where(
+                Enrollment.course_id == data.course_id,
+                Enrollment.student_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not enrollment:
+        raise HTTPException(status_code=403, detail="Not enrolled in this course")
+
     exercises = await generate_targeted_exercises(
         db,
         student_id=user.id,
         course_id=data.course_id,
-        knowledge_point_ids=data.knowledge_point_ids,
+        knowledge_point_ids=data.knowledge_point_ids or [],
         exercise_type=data.exercise_type,
         difficulty=data.difficulty,
         count=data.count,
+        use_llm=data.use_llm,
     )
     return {
         "message": f"Generated {len(exercises)} exercises",
         "exercises": exercises,
+        "source": exercises[0]["source"] if exercises else "empty",
+        "generation_method": exercises[0].get("generation_method") if exercises else None,
     }
 
 

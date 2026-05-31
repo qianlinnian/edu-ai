@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import json
@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 
-from agent_core.llm_provider import get_llm_provider
+from agent_core.agent_base import AgentConfig, GradingAgent
 from core.config import get_settings
 from education.exercise_engine import DEFAULT_INITIAL_MASTERY, apply_mastery_update
 from models.assignment import Assignment, GradingResult, Submission, SubmissionAnnotation, SubmissionStatus
@@ -124,40 +124,34 @@ def _build_grading_content(submission: Submission) -> tuple[str, str]:
     warnings: list[str] = []
 
     if submission.content and submission.content.strip():
-        text_parts.append(f"[文本提交]\n{submission.content.strip()}")
+        text_parts.append(f"[鏂囨湰鎻愪氦]\n{submission.content.strip()}")
 
     file_text, file_warning = _load_submission_file_text(submission.file_path)
     if file_text:
-        text_parts.append(f"[附件解析内容]\n{file_text}")
+        text_parts.append(f"[闄勪欢瑙ｆ瀽鍐呭]\n{file_text}")
     if file_warning:
         warnings.append(file_warning)
 
     merged = "\n\n".join(text_parts).strip()
     if len(merged) > MAX_GRADING_CONTENT_CHARS:
-        merged = merged[:MAX_GRADING_CONTENT_CHARS] + "\n\n[内容过长，已截断用于自动批改]"
+        merged = merged[:MAX_GRADING_CONTENT_CHARS] + "\n\n[鍐呭杩囬暱锛屽凡鎴柇鐢ㄤ簬鑷姩鎵规敼]"
 
     return merged, "\n".join(warnings)
 
 
 def _format_assignment_context(assignment: Assignment) -> str:
-    if assignment.rubric:
-        rubric_text = json.dumps(assignment.rubric, ensure_ascii=False)
-    else:
-        rubric_text = "老师未填写评分标准。默认按正确性 60%、完整性 25%、表达清晰度 15% 进行参考评分。"
-
-    reference_answer = assignment.reference_answer or "老师未提供参考答案，请主要依据作业说明和评分标准进行审慎评分。"
+    rubric_text = json.dumps(assignment.rubric, ensure_ascii=False) if assignment.rubric else "No rubric provided. Use correctness 60%, completeness 25%, clarity 15%."
+    reference_answer = assignment.reference_answer or "No reference answer provided. Grade according to the assignment description and rubric."
     knowledge_point_ids = _knowledge_point_ids(assignment.knowledge_points)
     return (
-        f"作业标题：{assignment.title}\n"
-        f"作业说明：{assignment.description or '无'}\n"
-        f"作业类型：{assignment.assignment_type}\n"
-        f"满分：{assignment.max_score}\n"
-        f"关联知识点 ID：{knowledge_point_ids or '无'}\n"
-        f"作业补充信息：\n"
-        f"- 评分标准：{rubric_text}\n"
-        f"- 参考答案：{reference_answer}"
+        f"Assignment title: {assignment.title}\n"
+        f"Description: {assignment.description or 'N/A'}\n"
+        f"Type: {assignment.assignment_type}\n"
+        f"Max score: {assignment.max_score}\n"
+        f"Knowledge point IDs: {knowledge_point_ids or 'N/A'}\n"
+        f"Rubric: {rubric_text}\n"
+        f"Reference answer: {reference_answer}"
     )
-
 
 def _fallback_knowledge_scores(knowledge_point_ids: list[int], score: float, max_score: float) -> dict[str, float]:
     if not knowledge_point_ids:
@@ -261,9 +255,9 @@ def _standardize_grading_payload(
     knowledge_point_ids = _knowledge_point_ids(assignment.knowledge_points)
     overall_comment = str(data.get("overall_comment") or data.get("comment") or "").strip()
     if not overall_comment:
-        overall_comment = "已完成自动批改。"
+        overall_comment = "Automatic grading completed."
         if source == "fallback" and error:
-            overall_comment += f" LLM 批改暂不可用，已回退到基础规则：{error[:180]}"
+            overall_comment += f" LLM grading unavailable; rule fallback used: {error[:180]}"
 
     return {
         "score": score,
@@ -281,57 +275,43 @@ def _standardize_grading_payload(
         "source": source,
     }
 
-
 async def _grade_with_llm(*, assignment: Assignment, submission: Submission) -> dict[str, Any]:
-    provider = get_llm_provider()
-    assignment_context = _format_assignment_context(assignment)
     content, warning_text = _build_grading_content(submission)
-    file_note = f"学生提交了附件：{submission.file_path}" if submission.file_path else "学生未提交附件。"
+    file_note = f"Student submitted attachment: {submission.file_path}" if submission.file_path else "Student did not submit an attachment."
     if warning_text:
-        file_note += f"\n附件处理提示：{warning_text}"
+        file_note += f"\nAttachment processing warning: {warning_text}"
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "你是教学平台的自动批改助手。请根据作业题目、评分标准、参考答案、关联知识点和学生提交内容进行评分。"
-                "必须只返回 JSON 对象，不要返回 markdown，不要添加解释性前后缀。"
+    agent = GradingAgent(
+        AgentConfig(
+            name="AssignmentGradingAgent",
+            course_id=assignment.course_id,
+            system_prompt=(
+                "You are EduAI's assignment grading agent. Grade according to the assignment, rubric, "
+                "reference answer, related knowledge points, and student submission. Return only JSON."
             ),
+            llm_provider=settings.DEFAULT_LLM_PROVIDER,
+            llm_model=settings.QWEN_MODEL,
+            temperature=0.2,
+        )
+    )
+    agent_result = await agent.grade(
+        submission_content=f"{file_note}\n\n{content or 'No parseable submission text.'}",
+        assignment_info={
+            "title": assignment.title,
+            "description": assignment.description,
+            "assignment_type": assignment.assignment_type,
+            "max_score": assignment.max_score,
+            "rubric": assignment.rubric,
+            "reference_answer": assignment.reference_answer,
+            "knowledge_points": _knowledge_point_ids(assignment.knowledge_points),
         },
-        {
-            "role": "user",
-            "content": (
-                f"{assignment_context}\n"
-                f"{file_note}\n\n"
-                f"学生提交内容（包含文本提交和可解析附件内容）：\n{content or '无可解析文本内容'}\n\n"
-                "请严格返回如下 JSON 结构：\n"
-                "{\n"
-                '  "score": 0 到满分之间的数字,\n'
-                '  "overall_comment": "总体评价，不能为空",\n'
-                '  "strengths": ["优点1"],\n'
-                '  "weaknesses": ["不足1"],\n'
-                '  "knowledge_point_scores": {"知识点ID": 0 到 100 的数字},\n'
-                '  "annotations": [\n'
-                "    {\n"
-                '      "annotation_type": "error|warning|suggestion|praise",\n'
-                '      "position": {"type": "text", "line": 1, "paragraph": 1, "quote": "学生原文片段"},\n'
-                '      "content": "批注意见",\n'
-                '      "severity": "low|medium|high|critical",\n'
-                '      "knowledge_point_id": 知识点ID或null\n'
-                "    }\n"
-                "  ]\n"
-                "}"
-            ),
-        },
-    ]
-    raw = await provider.chat(messages, temperature=0.2)
+    )
     return _standardize_grading_payload(
-        _safe_json_loads(raw),
+        agent_result,
         assignment=assignment,
         submission=submission,
-        source="llm",
+        source=agent_result.get("source") or "llm",
     )
-
 
 def _fallback_grading(*, assignment: Assignment, submission: Submission, error: str | None = None) -> dict[str, Any]:
     score = _calculate_score(
@@ -341,25 +321,22 @@ def _fallback_grading(*, assignment: Assignment, submission: Submission, error: 
     )
     data = {
         "score": score,
-        "overall_comment": "已完成自动批改（规则兜底）。",
-        "strengths": ["提交格式完整"] if submission.content or submission.file_path else [],
-        "weaknesses": [] if score >= float(assignment.max_score) * 0.6 else ["答案内容偏少，建议补充细节"],
+        "overall_comment": "Automatic fallback grading completed.",
+        "strengths": ["Submission format is complete"] if submission.content or submission.file_path else [],
+        "weaknesses": [] if score >= float(assignment.max_score) * 0.6 else ["Submission content is too short; add key steps, evidence, or examples"],
         "annotations": [
             {
                 "annotation_type": "suggestion",
                 "position": {"type": "text", "paragraph": 1, "quote": (submission.content or "")[:80]},
-                "content": "建议补充关键步骤、依据或示例，使答案更完整。",
+                "content": "Add key steps, evidence, or examples to make the answer more complete.",
                 "severity": "medium",
                 "knowledge_point_id": None,
             }
-        ]
-        if score < float(assignment.max_score) * 0.6
-        else [],
+        ] if score < float(assignment.max_score) * 0.6 else [],
     }
     if error:
-        data["overall_comment"] += f" LLM 批改暂不可用，已回退到基础规则：{error[:180]}"
+        data["overall_comment"] += f" LLM grading unavailable; rule fallback used: {error[:180]}"
     return _standardize_grading_payload(data, assignment=assignment, submission=submission, source="fallback")
-
 
 def _grade_submission_content(*, assignment: Assignment, submission: Submission) -> dict[str, Any]:
     try:
