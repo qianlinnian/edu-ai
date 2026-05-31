@@ -34,7 +34,7 @@ import {
   UploadOutlined,
 } from '@ant-design/icons'
 import type { DataNode } from 'antd/es/tree'
-import { courseAPI } from '../../services/api'
+import { courseAPI, getErrorMessage } from '../../services/api'
 import { useAuthStore } from '../../hooks/useAuthStore'
 
 type Course = {
@@ -100,7 +100,7 @@ const formatFileSize = (value?: number) => {
 const formatProcessingError = (error?: string | null) => {
   if (!error) return '-'
   if (error.includes('batch size is invalid') && error.includes('should not be larger than 10')) {
-    return '向量化失败：embedding 单批文本数量超过 10，请检查 EMBEDDING_BATCH_SIZE 后重试。'
+    return '向量化失败：embedding 单批文本数量超过 10，请检查 EMBEDDING_BATCH_SIZE。'
   }
   if (error.includes('task dispatch failed')) {
     return '任务派发失败：请确认 Celery worker 和 Redis 已启动。'
@@ -131,10 +131,15 @@ export default function CourseManage() {
   const [editForm] = Form.useForm()
   const [knowledgeForm] = Form.useForm()
 
-  const colorMap = useMemo(() => {
-    return new Map(courses.map((course, index) => [course.id, colors[index % colors.length]]))
-  }, [courses])
+  const colorMap = useMemo(
+    () => new Map(courses.map((course, index) => [course.id, colors[index % colors.length]])),
+    [courses]
+  )
   const currentColor = selectedCourse ? colorMap.get(selectedCourse.id) ?? colors[0] : colors[0]
+  const failedResources = resources.filter((item) => item.processing_status === 'failed')
+  const pendingResources = resources.filter(
+    (item) => item.processing_status === 'pending' || item.processing_status === 'processing'
+  )
   const knowledgeTree: DataNode[] = knowledgeUnits.map((item) => ({
     key: item.id,
     title: (
@@ -146,6 +151,10 @@ export default function CourseManage() {
     ),
   }))
 
+  const showRequestError = (error: unknown, fallback: string) => {
+    message.error(getErrorMessage(error, fallback))
+  }
+
   const loadCourses = async () => {
     setLoadingCourses(true)
     try {
@@ -155,8 +164,8 @@ export default function CourseManage() {
         const latest = data.find((item: Course) => item.id === selectedCourse.id)
         setSelectedCourse(latest ?? null)
       }
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '加载课程失败')
+    } catch (error) {
+      showRequestError(error, '加载课程失败')
     } finally {
       setLoadingCourses(false)
     }
@@ -167,9 +176,9 @@ export default function CourseManage() {
     try {
       const { data } = await courseAPI.listResources(courseId)
       setResources(data)
-    } catch (error: any) {
+    } catch (error) {
       setResources([])
-      message.error(error?.response?.data?.detail || '资源列表加载失败')
+      showRequestError(error, '资源列表加载失败')
     } finally {
       setLoadingResources(false)
     }
@@ -179,9 +188,9 @@ export default function CourseManage() {
     try {
       const { data } = await courseAPI.listKnowledgeUnits(courseId)
       setKnowledgeUnits(data)
-    } catch (error: any) {
+    } catch (error) {
       setKnowledgeUnits([])
-      message.error(error?.response?.data?.detail || '知识点加载失败')
+      showRequestError(error, '知识点加载失败')
     }
   }
 
@@ -190,9 +199,9 @@ export default function CourseManage() {
     try {
       const { data } = await courseAPI.listStudents(courseId)
       setStudents(data)
-    } catch (error: any) {
+    } catch (error) {
       setStudents([])
-      message.error(error?.response?.data?.detail || '学生名单加载失败')
+      showRequestError(error, '学生名单加载失败')
     } finally {
       setLoadingStudents(false)
     }
@@ -212,19 +221,18 @@ export default function CourseManage() {
     void loadResources(selectedCourse.id)
     void loadKnowledgeUnits(selectedCourse.id)
     if (isTeacher) void loadStudents(selectedCourse.id)
-  }, [selectedCourse?.id])
+  }, [isTeacher, selectedCourse?.id])
 
   useEffect(() => {
     if (!selectedCourse) return
-    const hasPending = resources.some((item) => item.processing_status === 'pending' || item.processing_status === 'processing')
-    if (!hasPending) return
+    if (!pendingResources.length) return
 
     const timer = window.setInterval(() => {
       void loadResources(selectedCourse.id)
     }, 3000)
 
     return () => window.clearInterval(timer)
-  }, [selectedCourse?.id, resources])
+  }, [pendingResources.length, selectedCourse?.id])
 
   const saveCourse = async (values: any, mode: 'create' | 'edit') => {
     setSavingCourse(true)
@@ -243,8 +251,8 @@ export default function CourseManage() {
         setEditOpen(false)
         await loadCourses()
       }
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || (mode === 'create' ? '课程创建失败' : '课程更新失败，请确认后端已实现 PUT /courses/{course_id}'))
+    } catch (error) {
+      showRequestError(error, mode === 'create' ? '课程创建失败' : '课程更新失败')
     } finally {
       setSavingCourse(false)
     }
@@ -256,8 +264,8 @@ export default function CourseManage() {
       message.success('课程已删除')
       if (selectedCourse?.id === course.id) setSelectedCourse(null)
       await loadCourses()
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '课程删除失败，请确认后端已实现 DELETE /courses/{course_id}')
+    } catch (error) {
+      showRequestError(error, '课程删除失败')
     }
   }
 
@@ -272,10 +280,10 @@ export default function CourseManage() {
       const { data } = await courseAPI.uploadResource(selectedCourse.id, file)
       message.success(data.message || '上传成功，正在处理')
       await loadResources(selectedCourse.id)
-    } catch (error: any) {
-      const detail = error?.response?.data?.detail || '上传失败'
+    } catch (error) {
+      const detail = getErrorMessage(error, '上传失败')
       const hint = String(detail).includes('task dispatch failed')
-        ? '上传成功但任务派发失败，请确认 Celery worker 和 Redis 已启动。'
+        ? '上传已完成，但解析任务派发失败，请检查 Celery worker 和 Redis。'
         : detail
       message.error(hint)
     } finally {
@@ -290,8 +298,8 @@ export default function CourseManage() {
       await courseAPI.deleteResource(selectedCourse.id, resource.id)
       message.success('课件已删除')
       await loadResources(selectedCourse.id)
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '课件删除失败')
+    } catch (error) {
+      showRequestError(error, '课件删除失败')
     }
   }
 
@@ -309,8 +317,8 @@ export default function CourseManage() {
       link.click()
       link.remove()
       URL.revokeObjectURL(url)
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '下载失败')
+    } catch (error) {
+      showRequestError(error, '下载失败')
     } finally {
       setDownloadingId(null)
     }
@@ -330,8 +338,8 @@ export default function CourseManage() {
       setKnowledgeOpen(false)
       knowledgeForm.resetFields()
       await loadKnowledgeUnits(selectedCourse.id)
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '创建知识点失败')
+    } catch (error) {
+      showRequestError(error, '创建知识点失败')
     } finally {
       setCreatingKnowledge(false)
     }
@@ -389,7 +397,7 @@ export default function CourseManage() {
           </Button>
           {isTeacher && (
             <Popconfirm
-              title="确认删除该课件？"
+              title="确认删除这个课件？"
               okText="删除"
               cancelText="取消"
               okButtonProps={{ danger: true }}
@@ -512,12 +520,65 @@ export default function CourseManage() {
     </Row>
   )
 
+  if (!isTeacher && selectedCourse) {
+    return (
+      <div>
+        <Space style={{ marginBottom: 24, width: '100%' }} wrap>
+          <Button onClick={() => setSelectedCourse(null)}>返回</Button>
+          <Avatar shape="square" size={40} style={{ background: currentColor, fontWeight: 700 }}>
+            {selectedCourse.name[0]}
+          </Avatar>
+          <Typography.Text strong style={{ fontSize: 20 }}>{selectedCourse.name}</Typography.Text>
+          <Tag color="blue">{selectedCourse.code}</Tag>
+          <Tag>{selectedCourse.domain}</Tag>
+        </Space>
+
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="课程资料下载"
+          description="当前页面仅展示本课程资料。处理完成的资料可直接下载；处理中或失败的资料需要稍后刷新或联系教师处理。"
+        />
+
+        {!!failedResources.length && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="部分资料暂不可下载"
+            description="学生端不提供重试入口。若资料持续处理失败，请联系教师删除后重新上传。"
+          />
+        )}
+
+        {!!pendingResources.length && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="部分资料仍在处理中"
+            description="列表会自动刷新；如果长时间未完成，请联系教师检查后台任务。"
+          />
+        )}
+
+        <Table
+          dataSource={resources}
+          rowKey="id"
+          loading={loadingResources}
+          pagination={false}
+          columns={resourceColumns}
+          locale={{ emptyText: <Empty description="当前课程暂无可下载资料" /> }}
+        />
+      </div>
+    )
+  }
+
   if (!isTeacher) {
     return (
       <div>
         <Typography.Title level={4}>我的课程</Typography.Title>
         {courses.length === 0 && !loadingCourses ? (
-          <Empty description="暂无课程。" />
+          <Empty description="暂无课程" />
         ) : (
           renderCourseCards()
         )}
@@ -557,6 +618,16 @@ export default function CourseManage() {
               label: '课件管理',
               children: (
                 <div>
+                  {!!failedResources.length && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginBottom: 16 }}
+                      message="存在处理失败的资料"
+                      description="当前版本已移除资源重试入口。请删除失败资料并重新上传，或检查后台任务配置。"
+                    />
+                  )}
+
                   <Upload.Dragger
                     accept=".pdf,.docx,.ppt,.pptx,.xlsx"
                     beforeUpload={uploadResource}
@@ -712,7 +783,7 @@ export default function CourseManage() {
         showIcon
         style={{ marginBottom: 16 }}
         message="课程管理"
-        description="点击课程卡片进入课件、知识点与课程信息管理页面。"
+        description="点击课程卡片进入课件、知识点与课程信息页面。"
       />
 
       {courses.length === 0 && !loadingCourses ? (

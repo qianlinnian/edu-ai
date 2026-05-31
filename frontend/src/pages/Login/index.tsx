@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Form, Input, Button, message, Tabs, Select } from 'antd'
 import { UserOutlined, LockOutlined, MailOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { authAPI } from '../../services/api'
+import { authAPI, getErrorMessage } from '../../services/api'
 import { useAuthStore } from '../../hooks/useAuthStore'
 
 export default function Login() {
@@ -19,13 +19,12 @@ export default function Login() {
       navigate('/')
     } catch (error: any) {
       const status = error?.response?.status
-      const detail = error?.response?.data?.detail
       if (status === 401 || status === 400) {
-        message.error(detail || '用户名或密码错误，请重新输入')
+        message.error(getErrorMessage(error, '用户名或密码错误，请重新输入'))
       } else if (status >= 500) {
         message.error('登录服务异常，请稍后再试或联系管理员')
       } else {
-        message.error(detail || '登录失败，请检查网络后重试')
+        message.error(getErrorMessage(error, '登录失败，请检查网络后重试'))
       }
     } finally {
       setLoading(false)
@@ -37,8 +36,8 @@ export default function Login() {
     try {
       await authAPI.register(values)
       message.success('注册成功，请登录')
-    } catch {
-      message.error('注册失败，请检查信息后重试')
+    } catch (error) {
+      message.error(getErrorMessage(error, '注册失败，请检查信息后重试'))
     } finally {
       setLoading(false)
     }
@@ -71,7 +70,6 @@ export default function Login() {
         pointerEvents: 'none',
       }} />
 
-      {/* 左侧品牌区 */}
       <div style={{
         flex: 1,
         display: 'flex',
@@ -108,13 +106,11 @@ export default function Login() {
           color: 'rgba(255,255,255,0.55)', fontSize: 15,
           maxWidth: 400, lineHeight: 1.9, margin: 0,
         }}>
-          智能答疑 · 作业批改 · 学情分析 · 个性化练习<br />
+          智能答疑 / 作业批改 / 学情分析 / 个性化练习<br />
           让每一门课程都拥有专属 AI 教学助手
         </p>
-        
       </div>
 
-      {/* 右侧登录卡片 */}
       <div style={{
         width: 480,
         display: 'flex',
@@ -143,16 +139,16 @@ export default function Login() {
             .login-select .ant-select-arrow { color: rgba(255,255,255,0.4) !important; }
           `}</style>
 
-        <Tabs
-          centered
+          <Tabs
+            centered
             className="login-tab"
-          items={[
-            {
-              key: 'login',
-              label: '登录',
-              children: (
+            items={[
+              {
+                key: 'login',
+                label: '登录',
+                children: (
                   <Form onFinish={handleLogin} style={{ marginTop: 20 }}>
-                  <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
+                    <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
                       <Input
                         className="login-input"
                         prefix={<UserOutlined />}
@@ -160,8 +156,8 @@ export default function Login() {
                         size="large"
                         style={inputStyle}
                       />
-                  </Form.Item>
-                  <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
+                    </Form.Item>
+                    <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
                       <Input.Password
                         className="login-input"
                         prefix={<LockOutlined />}
@@ -169,7 +165,7 @@ export default function Login() {
                         size="large"
                         style={inputStyle}
                       />
-                  </Form.Item>
+                    </Form.Item>
                     <Form.Item style={{ marginTop: 8 }}>
                       <Button
                         type="primary"
@@ -187,16 +183,16 @@ export default function Login() {
                           boxShadow: '0 4px 16px rgba(0,168,255,0.4)',
                         }}
                       >
-                      登录
-                    </Button>
-                  </Form.Item>
-                </Form>
-              ),
-            },
-            {
-              key: 'register',
-              label: '注册',
-              children: (
+                        登录
+                      </Button>
+                    </Form.Item>
+                  </Form>
+                ),
+              },
+              {
+                key: 'register',
+                label: '注册',
+                children: (
                   <Form onFinish={handleRegister} style={{ marginTop: 20 }}>
                     <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
                       <Input
@@ -206,7 +202,7 @@ export default function Login() {
                         size="large"
                         style={inputStyle}
                       />
-                  </Form.Item>
+                    </Form.Item>
                     <Form.Item name="email" rules={[{ required: true, type: 'email', message: '请输入有效邮箱' }]}>
                       <Input
                         className="login-input"
@@ -215,7 +211,7 @@ export default function Login() {
                         size="large"
                         style={inputStyle}
                       />
-                  </Form.Item>
+                    </Form.Item>
                     <Form.Item name="full_name" rules={[{ required: true, message: '请输入姓名' }]}>
                       <Input
                         className="login-input"
@@ -223,16 +219,16 @@ export default function Login() {
                         size="large"
                         style={inputStyle}
                       />
-                  </Form.Item>
-                    <Form.Item name="password" rules={[{ required: true, min: 6, message: '密码至少6位' }]}>
+                    </Form.Item>
+                    <Form.Item name="password" rules={[{ required: true, min: 6, message: '密码至少 6 位' }]}>
                       <Input.Password
                         className="login-input"
                         prefix={<LockOutlined />}
-                        placeholder="密码（至少6位）"
+                        placeholder="密码（至少 6 位）"
                         size="large"
                         style={inputStyle}
                       />
-                  </Form.Item>
+                    </Form.Item>
                     <Form.Item name="role" initialValue="student" rules={[{ required: true }]}>
                       <Select
                         className="login-select"
@@ -242,7 +238,7 @@ export default function Login() {
                           { value: 'teacher', label: '教师' },
                         ]}
                       />
-                  </Form.Item>
+                    </Form.Item>
                     <Form.Item style={{ marginTop: 8 }}>
                       <Button
                         type="primary"
@@ -260,14 +256,14 @@ export default function Login() {
                           boxShadow: '0 4px 16px rgba(0,168,255,0.4)',
                         }}
                       >
-                      注册
-                    </Button>
-                  </Form.Item>
-                </Form>
-              ),
-            },
-          ]}
-        />
+                        注册
+                      </Button>
+                    </Form.Item>
+                  </Form>
+                ),
+              },
+            ]}
+          />
         </div>
       </div>
     </div>

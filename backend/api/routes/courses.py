@@ -525,39 +525,4 @@ async def delete_resource(
     return {"message": "deleted", "minio_deleted": minio_deleted}
 
 
-@router.post("/{course_id}/resources/{resource_id}/retry")
-async def retry_resource_processing(
-    course_id: int,
-    resource_id: int,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    course = await _get_course_or_404(db, course_id)
-    _ensure_course_manager(course=course, user=user)
-    resource_result = await db.execute(
-        select(CourseResource).where(CourseResource.id == resource_id, CourseResource.course_id == course_id)
-    )
-    resource = resource_result.scalar_one_or_none()
-    if not resource:
-        raise HTTPException(status_code=404, detail="Resource not found")
-
-    if resource.processing_status == "processing":
-        raise HTTPException(status_code=409, detail="Resource is processing")
-
-    await db.execute(delete(ResourceChunk).where(ResourceChunk.resource_id == resource.id))
-    resource.processing_status = "pending"
-    resource.processing_error = None
-    resource.chunk_count = 0
-    resource.is_processed = False
-    await db.commit()
-
-    try:
-        process_resource.apply_async(args=[resource.id], countdown=1)
-    except Exception as exc:
-        resource.processing_status = "failed"
-        resource.processing_error = f"task dispatch failed: {exc}"
-        await db.commit()
-        raise HTTPException(status_code=500, detail=f"Failed to retry resource processing: {exc}") from exc
-
-    return {"message": "retry_queued", "id": resource.id, "name": resource.name}
 

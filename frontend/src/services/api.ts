@@ -30,6 +30,44 @@ api.interceptors.response.use(
 
 export default api
 
+export function getErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail
+
+    if (typeof detail === 'string' && detail.trim()) {
+      return detail
+    }
+
+    if (Array.isArray(detail)) {
+      const parts = detail
+        .map((item) => {
+          if (typeof item === 'string') return item
+          if (item && typeof item === 'object' && 'msg' in item && typeof item.msg === 'string') return item.msg
+          return ''
+        })
+        .filter(Boolean)
+
+      if (parts.length > 0) {
+        return parts.join('；')
+      }
+    }
+
+    if (!error.response) {
+      return '网络连接失败，请检查服务或网络后重试'
+    }
+
+    if (error.code === 'ECONNABORTED') {
+      return '请求超时，请稍后重试'
+    }
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+
+  return fallback
+}
+
 // ===== Auth API =====
 export const authAPI = {
   login: (username: string, password: string) => {

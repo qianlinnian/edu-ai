@@ -53,23 +53,26 @@ async def _resolve_chat_session(
     agent_result = await db.execute(
         select(AgentInstance).where(
             AgentInstance.id == data.agent_id,
+            AgentInstance.course_id == data.course_id,
             AgentInstance.is_active == True,
         )
     )
     agent = agent_result.scalar_one_or_none()
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=404, detail="Agent not found for this course")
 
     if data.session_id:
         result = await db.execute(
             select(ChatSession).where(
                 ChatSession.id == data.session_id,
                 ChatSession.user_id == user.id,
+                ChatSession.course_id == data.course_id,
+                ChatSession.agent_id == data.agent_id,
             )
         )
         session = result.scalar_one_or_none()
         if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=404, detail="Session not found for this course")
     else:
         session = ChatSession(
             user_id=user.id,
