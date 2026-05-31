@@ -151,6 +151,7 @@ async def create_agent(
     agent = AgentInstance(**data.model_dump(), created_by=user.id)
     db.add(agent)
     await db.flush()
+    await db.commit()
     await db.refresh(agent)
     return agent
 
@@ -214,6 +215,7 @@ async def update_agent(
         setattr(agent, field, value)
 
     await db.flush()
+    await db.commit()
     await db.refresh(agent)
     return agent
 
@@ -234,6 +236,7 @@ async def publish_agent(
 
     agent.is_active = True
     await db.flush()
+    await db.commit()
     await db.refresh(agent)
     return agent
 
@@ -252,6 +255,7 @@ async def create_workflow(
     workflow = AgentWorkflow(**data.model_dump(), is_active=existing_workflow.scalar_one_or_none() is None)
     db.add(workflow)
     await db.flush()
+    await db.commit()
     await db.refresh(workflow)
     return workflow
 
@@ -301,6 +305,7 @@ async def update_workflow(
         setattr(workflow, field, value)
 
     await db.flush()
+    await db.commit()
     await db.refresh(workflow)
     return workflow
 
@@ -323,5 +328,6 @@ async def publish_workflow(
     agent.is_active = True
 
     await db.flush()
+    await db.commit()
     await db.refresh(workflow)
     return workflow

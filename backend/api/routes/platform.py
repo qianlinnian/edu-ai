@@ -66,6 +66,7 @@ async def create_connection(
     conn = PlatformConnection(**data.model_dump())
     db.add(conn)
     await db.flush()
+    await db.commit()
     await db.refresh(conn)
     return conn
 

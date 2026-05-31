@@ -303,7 +303,6 @@ export default function AgentBuilder() {
 
   const saveWorkflow = async (agentId: number) => {
     const workflowPayload = {
-      agent_id: agentId,
       name: `${agentName} 工作流`,
       description: agentDescription || '课程问答工作流',
       workflow_dag: {
@@ -325,7 +324,7 @@ export default function AgentBuilder() {
 
     const response = currentWorkflowId
       ? await agentAPI.updateWorkflow(currentWorkflowId, workflowPayload)
-      : await agentAPI.createWorkflow(workflowPayload)
+      : await agentAPI.createWorkflow({ agent_id: agentId, ...workflowPayload })
 
     const nextWorkflowId = response.data.id as number
     setCurrentWorkflowId(nextWorkflowId)
