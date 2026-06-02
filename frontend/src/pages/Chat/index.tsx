@@ -253,7 +253,7 @@ export default function Chat() {
     abortControllerRef.current = createAbortController()
 
     fetchSSE(
-      '/api/v1/chat/send-stream',
+      chatAPI.sendStreamUrl,
       {
         agent_id: selAgent.id,
         course_id: selCourse.id,

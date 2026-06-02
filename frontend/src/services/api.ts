@@ -102,27 +102,44 @@ export function fetchSSE(
     const decoder = new TextDecoder()
     let buffer = ''
 
+    const handleEvent = (rawLine: string) => {
+      const trimmed = rawLine.trim()
+      if (!trimmed.startsWith('data:')) return false
+      try {
+        const data = JSON.parse(trimmed.slice(5).trim())
+        if (data.type === 'chunk') {
+          callbacks.onChunk(data.content ?? '')
+          return false
+        }
+        if (data.type === 'done') {
+          callbacks.onDone(data.session_id, data.message_id)
+          return true
+        }
+        if (data.type === 'error') {
+          callbacks.onError(data.detail ?? data.error ?? 'Unknown error')
+          return true
+        }
+      } catch {
+        // Ignore malformed SSE frames.
+      }
+      return false
+    }
+
     const read = () => {
       reader.read().then(({ done, value }) => {
-        if (done) return
+        if (done) {
+          if (buffer.trim()) {
+            handleEvent(buffer)
+          }
+          return
+        }
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop() ?? ''
 
         for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed.startsWith('data:')) continue
-          try {
-            const data = JSON.parse(trimmed.slice(5).trim())
-            if (data.type === 'chunk') {
-              callbacks.onChunk(data.content ?? '')
-            } else if (data.type === 'done') {
-              callbacks.onDone(data.session_id, data.message_id)
-            } else if (data.type === 'error') {
-              callbacks.onError(data.detail ?? 'Unknown error')
-            }
-          } catch {
-            // Ignore malformed SSE frames.
+          if (handleEvent(line)) {
+            return
           }
         }
 
@@ -228,16 +245,6 @@ export const chatAPI = {
   send: (data: { agent_id: number; course_id: number; session_id?: number; message: string }) =>
     api.post('/chat/send', data),
   sendStreamUrl: '/api/v1/chat/send-stream',
-  sendStream: (data: { agent_id: number; course_id: number; session_id?: number; message: string }) => {
-    return fetch('/api/v1/chat/send-stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${useAuthStore.getState().token}`,
-      },
-      body: JSON.stringify(data),
-    })
-  },
   listSessions: (courseId?: number) => api.get('/chat/sessions', { params: { course_id: courseId } }),
   getMessages: (sessionId: number) => api.get(`/chat/sessions/${sessionId}/messages`),
   deleteSession: (sessionId: number) => api.delete(`/chat/sessions/${sessionId}`),
@@ -319,7 +326,8 @@ export const agentAPI = {
 export const platformAPI = {
   listConnections: () => api.get('/platform/connections'),
   createConnection: (data: any) => api.post('/platform/connections', data),
-  launchChaoxing: (data: { course: number; token: string; role: 'student' | 'teacher' | 'assistant' }) =>
+  launchChaoxing: (data: { course_id: number; launch_ticket: string; role: 'student' | 'teacher' | 'assistant' }) =>
     api.post('/platform/chaoxing/lti-launch', data),
-  dingtalkAuth: (params: { code: string; course_id: number }) => api.get('/platform/dingtalk/auth', { params }),
+  dingtalkAuth: (params: { code: string; course_id: number; role: 'student' | 'teacher' | 'assistant' }) =>
+    api.get('/platform/dingtalk/auth', { params }),
 }
