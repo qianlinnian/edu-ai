@@ -1,11 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select, update
+from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from core.security import get_current_user
-from models.agent import AgentInstance, AgentTemplate, AgentWorkflow
+from models.agent import (
+    AgentInstance,
+    AgentTemplate,
+    AgentWorkflow,
+    build_agent_runtime_config_from_workflow,
+    validate_workflow_dag,
+)
 from models.course import Course, Enrollment
 from models.user import User, UserRole
 
@@ -72,6 +78,36 @@ class AgentWorkflowResponse(BaseModel):
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+def _validate_workflow_or_400(workflow_dag: dict, *, course_id: int, for_publish: bool) -> dict:
+    validation = validate_workflow_dag(workflow_dag, course_id=course_id)
+    errors = list(validation["errors"])
+    if for_publish:
+        errors.extend(validation["publish_errors"])
+    if errors:
+        raise HTTPException(status_code=400, detail="Workflow validation failed: " + "; ".join(errors))
+    return validation
+
+
+def _apply_workflow_publication(agent: AgentInstance, workflow: AgentWorkflow) -> None:
+    runtime_config = build_agent_runtime_config_from_workflow(workflow.workflow_dag, course_id=agent.course_id)
+    config = dict(agent.config or {})
+    config.update(
+        {
+            "agent_type": runtime_config["agent_type"],
+            "workflow_mode": runtime_config["workflow_mode"],
+            "runtime_note": runtime_config["runtime_note"],
+            "top_k": runtime_config["top_k"],
+            "similarity_threshold": runtime_config["similarity_threshold"],
+            "workflow_summary": runtime_config["workflow_summary"],
+            "workflow_mapping": runtime_config["workflow_mapping"],
+        }
+    )
+    agent.config = config
+    agent.tools = runtime_config["tools"]
+    agent.llm_model = runtime_config["llm_model"]
+    agent.is_active = True
 
 
 async def _get_course_or_404(db: AsyncSession, course_id: int) -> Course:
@@ -230,11 +266,19 @@ async def publish_agent(
     course = await _get_course_or_404(db, agent.course_id)
     _ensure_course_manager(course=course, user=user)
 
-    workflow_result = await db.execute(select(AgentWorkflow.id).where(AgentWorkflow.agent_id == agent.id).limit(1))
-    if workflow_result.scalar_one_or_none() is None:
+    workflow_result = await db.execute(
+        select(AgentWorkflow)
+        .where(AgentWorkflow.agent_id == agent.id)
+        .order_by(AgentWorkflow.is_active.desc(), desc(AgentWorkflow.created_at))
+        .limit(1)
+    )
+    workflow = workflow_result.scalar_one_or_none()
+    if workflow is None:
         raise HTTPException(status_code=409, detail="Agent workflow is required before publishing")
 
-    agent.is_active = True
+    _validate_workflow_or_400(workflow.workflow_dag, course_id=agent.course_id, for_publish=True)
+    _apply_workflow_publication(agent, workflow)
+    workflow.is_active = True
     await db.flush()
     await db.commit()
     await db.refresh(agent)
@@ -250,6 +294,7 @@ async def create_workflow(
     agent = await _get_agent_or_404(db, data.agent_id)
     course = await _get_course_or_404(db, agent.course_id)
     _ensure_course_manager(course=course, user=user)
+    _validate_workflow_or_400(data.workflow_dag, course_id=agent.course_id, for_publish=False)
 
     existing_workflow = await db.execute(select(AgentWorkflow.id).where(AgentWorkflow.agent_id == agent.id).limit(1))
     workflow = AgentWorkflow(**data.model_dump(), is_active=existing_workflow.scalar_one_or_none() is None)
@@ -301,7 +346,11 @@ async def update_workflow(
     course = await _get_course_or_404(db, agent.course_id)
     _ensure_course_manager(course=course, user=user)
 
-    for field, value in data.model_dump(exclude_unset=True).items():
+    payload = data.model_dump(exclude_unset=True)
+    if "workflow_dag" in payload:
+        _validate_workflow_or_400(payload["workflow_dag"], course_id=agent.course_id, for_publish=False)
+
+    for field, value in payload.items():
         setattr(workflow, field, value)
 
     await db.flush()
@@ -320,12 +369,13 @@ async def publish_workflow(
     agent = await _get_agent_or_404(db, workflow.agent_id)
     course = await _get_course_or_404(db, agent.course_id)
     _ensure_course_manager(course=course, user=user)
+    _validate_workflow_or_400(workflow.workflow_dag, course_id=agent.course_id, for_publish=True)
 
     await db.execute(
         update(AgentWorkflow).where(AgentWorkflow.agent_id == agent.id).values(is_active=False)
     )
     workflow.is_active = True
-    agent.is_active = True
+    _apply_workflow_publication(agent, workflow)
 
     await db.flush()
     await db.commit()
