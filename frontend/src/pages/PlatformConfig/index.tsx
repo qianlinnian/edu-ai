@@ -7,12 +7,23 @@ type PlatformStatus = {
   connected: boolean
   lastTest?: string
   widgetUrl?: string
+  tokenSource?: string
+  courseIdSource?: string
+  roleSource?: string
+  role?: string
+  upstreamReference?: string
 }
 
 type CourseOption = {
   id: number
   name: string
 }
+
+const ROLE_OPTIONS = [
+  { value: 'student', label: 'student' },
+  { value: 'teacher', label: 'teacher' },
+  { value: 'assistant', label: 'assistant' },
+]
 
 export default function PlatformConfig() {
   const [chaoxingStatus, setChaoxingStatus] = useState<PlatformStatus>({ connected: false })
@@ -41,14 +52,14 @@ export default function PlatformConfig() {
     void loadCourses()
   }, [])
 
-  const widgetUrl = useMemo(() => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://your-domain.com'
-    return `${origin}/widget/chat?course=${selectedCourse ?? 1}&token=YOUR_TOKEN`
-  }, [selectedCourse])
+  const widgetTemplate = useMemo(
+    () => `/widget/chat?course=${selectedCourse ?? '{course_id}'}&token={backend_embed_token}`,
+    [selectedCourse]
+  )
 
-  const iframeCode = useMemo(
-    () => `<iframe\n  src="${widgetUrl}"\n  width="400"\n  height="600"\n  frameborder="0">\n</iframe>`,
-    [widgetUrl]
+  const iframeTemplate = useMemo(
+    () => `<iframe\n  src="${widgetTemplate}"\n  width="400"\n  height="600"\n  frameborder="0">\n</iframe>`,
+    [widgetTemplate]
   )
 
   const copyToClipboard = async (text: string) => {
@@ -66,7 +77,7 @@ export default function PlatformConfig() {
       setSaving(true)
       await platformAPI.createConnection({
         platform_type: platform,
-        name: values.name || `${label} 演示连接`,
+        name: values.name || `${label} 模拟接入`,
         config: platform === 'chaoxing'
           ? {
               lti_key: values.lti_key,
@@ -96,28 +107,41 @@ export default function PlatformConfig() {
     setTesting(platform)
     try {
       if (platform === 'chaoxing') {
+        const values = await chaoxingForm.validateFields(['launch_ticket', 'test_role'])
         const { data } = await platformAPI.launchChaoxing({
-          course: selectedCourse,
-          token: 'EMBED_DEMO_TOKEN',
-          role: 'student',
+          course_id: selectedCourse,
+          launch_ticket: values.launch_ticket,
+          role: values.test_role,
         })
         setChaoxingStatus({
           connected: true,
           lastTest: new Date().toLocaleString(),
           widgetUrl: data.widget_url,
+          tokenSource: data.token_source,
+          courseIdSource: data.course_id_source,
+          roleSource: data.role_source,
+          role: data.role,
+          upstreamReference: `${data.upstream_reference_type}: ${data.upstream_reference}`,
         })
-        message.success('超星连接测试成功')
+        message.success('超星模拟连接测试成功')
       } else {
+        const values = await dingtalkForm.validateFields(['auth_code', 'test_role'])
         const { data } = await platformAPI.dingtalkAuth({
-          code: 'demo-code',
+          code: values.auth_code,
           course_id: selectedCourse,
+          role: values.test_role,
         })
         setDingtalkStatus({
           connected: true,
           lastTest: new Date().toLocaleString(),
           widgetUrl: data.widget_url,
+          tokenSource: data.token_source,
+          courseIdSource: data.course_id_source,
+          roleSource: data.role_source,
+          role: data.role,
+          upstreamReference: `${data.upstream_reference_type}: ${data.upstream_reference}`,
         })
-        message.success('钉钉连接测试成功')
+        message.success('钉钉模拟连接测试成功')
       }
     } catch (error) {
       message.error(getErrorMessage(error, '连接测试失败'))
@@ -133,8 +157,8 @@ export default function PlatformConfig() {
       <Alert
         type="info"
         showIcon
-        message="当前页已接入真实平台接口"
-        description="保存会调用平台连接创建接口，测试连接会调用超星/钉钉模拟端点。嵌入 URL 仍使用演示令牌占位符，需要由上游平台在实际嵌入时下发真实 token。"
+        message="当前页仅实现“模拟平台接入”，不是超星或钉钉真实联调"
+        description="上游平台提供 course_id、role 和 launch_ticket/auth_code；本系统后端签发 embed token，并返回最终 widget_url。当前不接入真实 SDK，也不做真实签名校验。"
         style={{ borderRadius: 10, marginBottom: 20 }}
       />
 
@@ -149,6 +173,7 @@ export default function PlatformConfig() {
                 ) : (
                   <Tag>未测试</Tag>
                 )}
+                <Tag color="blue">模拟接入</Tag>
               </Space>
             }
             bordered={false}
@@ -158,8 +183,9 @@ export default function PlatformConfig() {
               form={chaoxingForm}
               layout="vertical"
               initialValues={{
-                name: '超星课程演示连接',
-                callback_url: `${typeof window !== 'undefined' ? window.location.origin : 'https://your-domain.com'}/lti/chaoxing`,
+                name: '超星课程模拟接入',
+                callback_url: `${typeof window !== 'undefined' ? window.location.origin : 'https://example.com'}/lti/chaoxing`,
+                test_role: 'student',
               }}
             >
               <Form.Item label="连接名称" name="name" rules={[{ required: true, message: '请输入连接名称' }]}>
@@ -174,13 +200,40 @@ export default function PlatformConfig() {
               <Form.Item label="回调 URL" name="callback_url" rules={[{ required: true, message: '请输入回调 URL' }]}>
                 <Input />
               </Form.Item>
+
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="测试连接使用模拟上游参数"
+                description="launch_ticket 与 role 视为上游平台提供；course_id 取当前页面所选课程；embed token 与 widget_url 由本系统后端生成。"
+              />
+
+              <Form.Item label="模拟 launch_ticket（上游提供）" name="launch_ticket" rules={[{ required: true, message: '请输入 launch_ticket' }]}>
+                <Input placeholder="输入上游平台传入的 launch_ticket" />
+              </Form.Item>
+              <Form.Item label="模拟 role（上游提供）" name="test_role" rules={[{ required: true, message: '请选择 role' }]}>
+                <Select options={ROLE_OPTIONS} />
+              </Form.Item>
+
               {chaoxingStatus.lastTest && (
                 <Typography.Text type="secondary">上次测试：{chaoxingStatus.lastTest}</Typography.Text>
               )}
               {chaoxingStatus.widgetUrl && (
-                <Typography.Paragraph copyable style={{ marginTop: 8, marginBottom: 12 }}>
-                  {chaoxingStatus.widgetUrl}
-                </Typography.Paragraph>
+                <div style={{ marginTop: 8, marginBottom: 12 }}>
+                  <Typography.Paragraph copyable style={{ marginBottom: 8 }}>
+                    {chaoxingStatus.widgetUrl}
+                  </Typography.Paragraph>
+                  <Typography.Text type="secondary">token 来源：{chaoxingStatus.tokenSource}</Typography.Text>
+                  <br />
+                  <Typography.Text type="secondary">course_id 来源：{chaoxingStatus.courseIdSource}</Typography.Text>
+                  <br />
+                  <Typography.Text type="secondary">role 来源：{chaoxingStatus.roleSource}</Typography.Text>
+                  <br />
+                  <Typography.Text type="secondary">本次 role：{chaoxingStatus.role}</Typography.Text>
+                  <br />
+                  <Typography.Text type="secondary">上游引用：{chaoxingStatus.upstreamReference}</Typography.Text>
+                </div>
               )}
               <Space>
                 <Button
@@ -188,7 +241,7 @@ export default function PlatformConfig() {
                   icon={<ApiOutlined />}
                   onClick={() => void testConnection('chaoxing')}
                 >
-                  测试连接
+                  测试模拟接入
                 </Button>
                 <Button
                   type="primary"
@@ -212,6 +265,7 @@ export default function PlatformConfig() {
                 ) : (
                   <Tag>未测试</Tag>
                 )}
+                <Tag color="blue">模拟接入</Tag>
               </Space>
             }
             bordered={false}
@@ -220,7 +274,7 @@ export default function PlatformConfig() {
             <Form
               form={dingtalkForm}
               layout="vertical"
-              initialValues={{ name: '钉钉课程演示连接' }}
+              initialValues={{ name: '钉钉课程模拟接入', test_role: 'student' }}
             >
               <Form.Item label="连接名称" name="name" rules={[{ required: true, message: '请输入连接名称' }]}>
                 <Input />
@@ -234,13 +288,40 @@ export default function PlatformConfig() {
               <Form.Item label="AgentId" name="agent_id" rules={[{ required: true, message: '请输入 AgentId' }]}>
                 <Input />
               </Form.Item>
+
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="测试连接使用模拟上游参数"
+                description="auth_code 与 role 视为上游平台提供；course_id 取当前页面所选课程；embed token 与 widget_url 由本系统后端生成。"
+              />
+
+              <Form.Item label="模拟 auth_code（上游提供）" name="auth_code" rules={[{ required: true, message: '请输入 auth_code' }]}>
+                <Input placeholder="输入上游平台传入的 auth_code" />
+              </Form.Item>
+              <Form.Item label="模拟 role（上游提供）" name="test_role" rules={[{ required: true, message: '请选择 role' }]}>
+                <Select options={ROLE_OPTIONS} />
+              </Form.Item>
+
               {dingtalkStatus.lastTest && (
                 <Typography.Text type="secondary">上次测试：{dingtalkStatus.lastTest}</Typography.Text>
               )}
               {dingtalkStatus.widgetUrl && (
-                <Typography.Paragraph copyable style={{ marginTop: 8, marginBottom: 12 }}>
-                  {dingtalkStatus.widgetUrl}
-                </Typography.Paragraph>
+                <div style={{ marginTop: 8, marginBottom: 12 }}>
+                  <Typography.Paragraph copyable style={{ marginBottom: 8 }}>
+                    {dingtalkStatus.widgetUrl}
+                  </Typography.Paragraph>
+                  <Typography.Text type="secondary">token 来源：{dingtalkStatus.tokenSource}</Typography.Text>
+                  <br />
+                  <Typography.Text type="secondary">course_id 来源：{dingtalkStatus.courseIdSource}</Typography.Text>
+                  <br />
+                  <Typography.Text type="secondary">role 来源：{dingtalkStatus.roleSource}</Typography.Text>
+                  <br />
+                  <Typography.Text type="secondary">本次 role：{dingtalkStatus.role}</Typography.Text>
+                  <br />
+                  <Typography.Text type="secondary">上游引用：{dingtalkStatus.upstreamReference}</Typography.Text>
+                </div>
               )}
               <Space>
                 <Button
@@ -248,7 +329,7 @@ export default function PlatformConfig() {
                   icon={<ApiOutlined />}
                   onClick={() => void testConnection('dingtalk')}
                 >
-                  测试连接
+                  测试模拟接入
                 </Button>
                 <Button
                   type="primary"
@@ -263,7 +344,7 @@ export default function PlatformConfig() {
         </Col>
       </Row>
 
-      <Card title="嵌入式 Widget 代码生成" bordered={false} style={{ borderRadius: 12, marginTop: 16 }}>
+      <Card title="Widget URL 口径说明" bordered={false} style={{ borderRadius: 12, marginTop: 16 }}>
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', marginBottom: 16, flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>选择课程</div>
@@ -277,8 +358,16 @@ export default function PlatformConfig() {
           </div>
         </div>
 
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="字段来源统一口径"
+          description="course_id 和 role 来自上游平台请求；token 由 EduAI 后端签发；widget_url 由 EduAI 后端根据 course_id + token 组装后返回。"
+        />
+
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Widget URL</div>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>widget_url 结构模板</div>
           <div
             style={{
               background: '#f5f5f5',
@@ -292,15 +381,15 @@ export default function PlatformConfig() {
               alignItems: 'center',
             }}
           >
-            <span style={{ wordBreak: 'break-all' }}>{widgetUrl}</span>
-            <Button size="small" icon={<CopyOutlined />} onClick={() => void copyToClipboard(widgetUrl)}>
+            <span style={{ wordBreak: 'break-all' }}>{widgetTemplate}</span>
+            <Button size="small" icon={<CopyOutlined />} onClick={() => void copyToClipboard(widgetTemplate)}>
               复制
             </Button>
           </div>
         </div>
 
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>iframe 嵌入代码</div>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>iframe 嵌入模板</div>
           <div style={{ position: 'relative' }}>
             <pre
               style={{
@@ -313,12 +402,12 @@ export default function PlatformConfig() {
                 margin: 0,
               }}
             >
-              {iframeCode}
+              {iframeTemplate}
             </pre>
             <Button
               size="small"
               icon={<CopyOutlined />}
-              onClick={() => void copyToClipboard(iframeCode)}
+              onClick={() => void copyToClipboard(iframeTemplate)}
               style={{ position: 'absolute', top: 10, right: 10 }}
             >
               复制代码
