@@ -54,7 +54,7 @@ async def generate_exercises(
     if not enrollment:
         raise HTTPException(status_code=403, detail="Not enrolled in this course")
 
-    exercises = await generate_targeted_exercises(
+    result = await generate_targeted_exercises(
         db,
         student_id=user.id,
         course_id=data.course_id,
@@ -64,11 +64,15 @@ async def generate_exercises(
         count=data.count,
         use_llm=data.use_llm,
     )
+    exercises = result["exercises"]
     return {
         "message": f"Generated {len(exercises)} exercises",
         "exercises": exercises,
-        "source": exercises[0]["source"] if exercises else "empty",
-        "generation_method": exercises[0].get("generation_method") if exercises else None,
+        "source": result["source"],
+        "generation_method": result["generation_method"],
+        "target_knowledge_points": result["target_knowledge_points"],
+        "source_summary": result["source_summary"],
+        "fallback_used": result["fallback_used"],
     }
 
 
@@ -91,24 +95,31 @@ async def submit_attempt(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Refresh weak-point alerts after each attempt.
+    refreshed_alerts = 0
+    course_id: int | None = None
     if attempt.exercise_id:
         exercise = (
             await db.execute(select(ExercisePool).where(ExercisePool.id == attempt.exercise_id))
         ).scalar_one_or_none()
         if exercise:
-            await refresh_learning_alerts(db, course_id=exercise.course_id, student_id=user.id)
+            course_id = exercise.course_id
+            refreshed_alerts = await refresh_learning_alerts(db, course_id=exercise.course_id, student_id=user.id)
     elif attempt.generated_exercise_id:
         generated = (
             await db.execute(select(GeneratedExercise).where(GeneratedExercise.id == attempt.generated_exercise_id))
         ).scalar_one_or_none()
         if generated:
-            await refresh_learning_alerts(db, course_id=generated.course_id, student_id=user.id)
+            course_id = generated.course_id
+            refreshed_alerts = await refresh_learning_alerts(db, course_id=generated.course_id, student_id=user.id)
 
     return {
         "id": attempt.id,
         "is_correct": attempt.is_correct,
         "score": attempt.score,
         "feedback": attempt.feedback,
+        "course_id": course_id,
+        "mastery_updated": True,
+        "alerts_refreshed": refreshed_alerts,
     }
 
 

@@ -8,11 +8,11 @@ import {
   ReloadOutlined,
   TrophyOutlined,
 } from '@ant-design/icons'
-import { courseAPI, exerciseAPI } from '../../services/api'
+import { courseAPI, exerciseAPI, getErrorMessage } from '../../services/api'
 
 type Course = { id: number; name: string; code: string }
-type QuestionSource = 'pool' | 'generated' | 'mock'
-type GenerationMethod = 'llm' | 'fallback' | null
+type QuestionSource = 'pool' | 'generated'
+type GenerationMethod = 'llm' | 'fallback' | 'pool_recommendation' | null
 type Option = { key: string; label: string }
 type Question = {
   id?: number
@@ -29,31 +29,28 @@ type Question = {
 }
 
 type AttemptResult = {
-  correct?: boolean
   is_correct?: boolean
   score?: number
   feedback?: string
-  explanation?: string
   answer?: string
+  alerts_refreshed?: number
 }
 
-const mockQuestions: Question[] = [
-  {
-    id: 1,
-    source: 'mock',
-    question: '以下代码的输出结果是什么？for (int i = 0; i < 3; i++) { System.out.print(i + " "); }',
-    options: [
-      { key: 'A', label: '1 2 3' },
-      { key: 'B', label: '0 1 2' },
-      { key: 'C', label: '0 1 2 3' },
-      { key: 'D', label: '1 2' },
-    ],
-    answer: 'B',
-    explanation: '循环变量 i 从 0 开始，到 i < 3 时结束，因此输出 0、1、2。',
-    knowledge: '循环结构',
-    difficulty: 1,
-  },
-]
+type TargetKnowledgePoint = {
+  knowledge_unit_id: number
+  name: string
+  mastery_score: number
+  attempt_count: number
+}
+
+type GenerateResponse = {
+  exercises: any[]
+  source: string
+  generation_method: GenerationMethod
+  target_knowledge_points: TargetKnowledgePoint[]
+  source_summary: { llm: number; pool: number; fallback: number }
+  fallback_used: boolean
+}
 
 const difficultyLabel: Record<number, string> = {
   1: '基础',
@@ -80,7 +77,7 @@ const normalizeOptions = (raw: any): Option[] => {
 }
 
 const normalizeQuestion = (item: any, index: number): Question => {
-  const source: QuestionSource = item.source === 'generated' ? 'generated' : item.source === 'mock' ? 'mock' : 'pool'
+  const source: QuestionSource = item.source === 'generated' ? 'generated' : 'pool'
   const generatedId = item.generated_exercise_id || (source === 'generated' ? item.id : undefined)
   const exerciseId = item.exercise_id || (source === 'pool' ? item.id : undefined)
   const knowledgePointIds = Array.isArray(item.knowledge_point_ids)
@@ -108,9 +105,8 @@ const isDisplayableChoiceQuestion = (item: Question) => item.options.length > 0 
 
 const getSourceTag = (question?: Question) => {
   if (!question) return null
-  if (question.source === 'mock') return <Tag color="default">兜底练习</Tag>
   if (question.source === 'pool') return <Tag color="blue">题库推荐</Tag>
-  if (question.generation_method === 'fallback') return <Tag color="orange">兜底练习</Tag>
+  if (question.generation_method === 'fallback') return <Tag color="orange">后端兜底生成</Tag>
   return <Tag color="green">AI 生成</Tag>
 }
 
@@ -129,6 +125,8 @@ export default function Exercises() {
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [errorText, setErrorText] = useState<string | null>(null)
+  const [targetKnowledgePoints, setTargetKnowledgePoints] = useState<TargetKnowledgePoint[]>([])
 
   const q = questions[current]
   const total = questions.length || 1
@@ -143,42 +141,48 @@ export default function Exercises() {
     setAttemptResult(null)
   }
 
-  const setQuestionSet = (nextQuestions: Question[], nextNotice: string | null) => {
+  const setQuestionSet = (nextQuestions: Question[], nextNotice: string | null, weakPoints: TargetKnowledgePoint[] = []) => {
     setQuestions(nextQuestions)
     setNotice(nextNotice)
+    setTargetKnowledgePoints(weakPoints)
+    setErrorText(null)
     resetProgress()
   }
 
   const loadPoolQuestions = async (courseIdValue: number) => {
-    const poolRes = await exerciseAPI.listPool(courseIdValue).catch(() => ({ data: [] }))
-    const poolQuestions = (Array.isArray(poolRes.data) ? poolRes.data : [])
+    const { data } = await exerciseAPI.listPool(courseIdValue)
+    const poolQuestions = (Array.isArray(data) ? data : [])
       .map(normalizeQuestion)
       .filter(isDisplayableChoiceQuestion)
 
     if (poolQuestions.length > 0) {
-      setQuestionSet(poolQuestions, '当前展示题库推荐练习。点击“根据薄弱点生成练习”可按个人学情生成新题。')
+      setQuestionSet(poolQuestions, '当前展示题库推荐练习。点击“根据薄弱点生成练习”会优先使用你的薄弱知识点生成或推荐新题。')
       return
     }
 
-    setQuestionSet(mockQuestions, '当前课程暂无可展示的题库选择题，已展示兜底练习。')
+    setQuestionSet([], '当前课程暂无可展示的题库练习。你可以直接根据薄弱点生成练习。')
   }
 
   const loadCoursesAndQuestions = async (courseIdArg?: number) => {
     setLoading(true)
+    setErrorText(null)
     try {
-      const { data: courseData } = await courseAPI.list().catch(() => ({ data: [] }))
+      const { data: courseData } = await courseAPI.list()
       const nextCourses = Array.isArray(courseData) ? courseData : []
       setCourses(nextCourses)
       const activeCourseId = courseIdArg || selectedCourseId || routeCourseId || nextCourses[0]?.id
       if (!activeCourseId) {
-        setQuestionSet(mockQuestions, '暂无可用课程，已展示兜底练习。')
+        setQuestionSet([], '暂无可用课程，当前无法加载练习。')
         return
       }
 
       setSelectedCourseId(activeCourseId)
       await loadPoolQuestions(activeCourseId)
-    } catch {
-      setQuestionSet(mockQuestions, '练习数据加载失败，已展示兜底练习。')
+    } catch (error) {
+      setQuestions([])
+      setTargetKnowledgePoints([])
+      setNotice(null)
+      setErrorText(getErrorMessage(error, '练习数据加载失败'))
     } finally {
       setLoading(false)
     }
@@ -191,7 +195,8 @@ export default function Exercises() {
   const handleGenerateByWeakPoints = async () => {
     if (!selectedCourseId) return
     setGenerating(true)
-    setNotice('AI 正在根据你的学情生成练习...')
+    setNotice('正在根据你的掌握度、预警和薄弱知识点生成练习...')
+    setErrorText(null)
     try {
       const { data } = await exerciseAPI.generate({
         course_id: selectedCourseId,
@@ -201,29 +206,28 @@ export default function Exercises() {
         count: 3,
         use_llm: true,
       })
-      const source = Array.isArray(data) ? data : Array.isArray(data?.exercises) ? data.exercises : []
-      const generatedQuestions: Question[] = source.map(normalizeQuestion).filter(isDisplayableChoiceQuestion)
+      const payload = data as GenerateResponse
+      const generatedQuestions: Question[] = (Array.isArray(payload.exercises) ? payload.exercises : [])
+        .map(normalizeQuestion)
+        .filter(isDisplayableChoiceQuestion)
 
       if (generatedQuestions.length === 0) {
-        message.warning('生成接口未返回可展示的选择题，已保留当前练习。')
-        setNotice('生成接口未返回可展示的选择题，当前仍展示原练习。')
+        setQuestions([])
+        setTargetKnowledgePoints(payload.target_knowledge_points || [])
+        setNotice('后端未返回可展示的选择题，当前保持空态。')
         return
       }
 
-      const hasLlm = generatedQuestions.some((item) => item.source === 'generated' && item.generation_method === 'llm')
-      const hasFallback = generatedQuestions.some((item) => item.source === 'generated' && item.generation_method === 'fallback')
-      const hasPool = generatedQuestions.some((item) => item.source === 'pool')
-      const nextNotice = hasLlm
-        ? '已生成 AI 个性化练习，作答会写入生成题作答记录并更新学情。'
-        : hasFallback
-          ? 'AI 生成不可用，后端已提供兜底练习以保持流程可用。'
-          : hasPool
-            ? '后端按薄弱点返回了题库推荐练习。'
-            : null
-      setQuestionSet(generatedQuestions, nextNotice)
-    } catch {
-      message.error('AI 生成练习失败，请稍后重试。')
-      setNotice('AI 生成练习失败，当前仍展示原练习。')
+      const summary = payload.source_summary || { llm: 0, pool: 0, fallback: 0 }
+      const nextNotice = summary.llm > 0
+        ? '已根据薄弱知识点生成 AI 个性化练习。作答后会更新 mastery，并刷新 learning alerts。'
+        : summary.fallback > 0
+          ? 'LLM 生成不可用，后端已返回兜底练习以保持闭环可用。'
+          : '后端已按薄弱知识点返回题库推荐练习。'
+      setQuestionSet(generatedQuestions, nextNotice, payload.target_knowledge_points || [])
+    } catch (error) {
+      setErrorText(getErrorMessage(error, '生成练习失败'))
+      setNotice(null)
     } finally {
       setGenerating(false)
     }
@@ -232,20 +236,15 @@ export default function Exercises() {
   const handleSubmit = async () => {
     if (!selected || !q) return
     setLoading(true)
+    setErrorText(null)
     try {
-      let result: AttemptResult
-      try {
-        const payload = q.generated_exercise_id
-          ? { generated_exercise_id: q.generated_exercise_id, student_answer: selected }
-          : { exercise_id: q.exercise_id, student_answer: selected }
-        const { data } = await exerciseAPI.attempt(payload)
-        result = data
-      } catch {
-        const correct = selected === (q.answer || 'A')
-        result = { is_correct: correct, score: correct ? 100 : 0, feedback: q.explanation || '暂无反馈', answer: q.answer }
-      }
+      const payload = q.generated_exercise_id
+        ? { generated_exercise_id: q.generated_exercise_id, student_answer: selected }
+        : { exercise_id: q.exercise_id, student_answer: selected }
+      const { data } = await exerciseAPI.attempt(payload)
+      const result = data as AttemptResult
 
-      const correct = Boolean(result.correct ?? result.is_correct)
+      const correct = Boolean(result.is_correct)
       setAttemptResult(result)
       setSubmitted(true)
       setAnswers((prev) => ({
@@ -256,6 +255,14 @@ export default function Exercises() {
           score: Number(result.score || 0),
         },
       }))
+
+      if ((result.alerts_refreshed || 0) > 0) {
+        setNotice(`本次作答已刷新 ${result.alerts_refreshed} 条学习预警，可前往学情页查看。`)
+      }
+    } catch (error) {
+      const detail = getErrorMessage(error, '提交作答失败')
+      setErrorText(detail)
+      message.error(detail)
     } finally {
       setLoading(false)
     }
@@ -276,7 +283,33 @@ export default function Exercises() {
     ? Math.round(Object.values(answers).reduce((sum, item) => sum + item.score, 0) / Object.values(answers).length)
     : 0
 
-  if (!questions.length && !loading) return <Empty description="暂无练习" />
+  if (!loading && !questions.length) {
+    return (
+      <div>
+        <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 20 }} wrap>
+          <Typography.Title level={4} style={{ margin: 0 }}>练习中心</Typography.Title>
+          <Space wrap>
+            <Select
+              style={{ width: 260 }}
+              options={courses.map((course) => ({ value: course.id, label: `${course.name}（${course.code}）` }))}
+              value={selectedCourseId}
+              onChange={(value) => {
+                setSelectedCourseId(value)
+                void loadCoursesAndQuestions(value)
+              }}
+            />
+            <Button type="primary" icon={<ExperimentOutlined />} loading={generating} onClick={() => void handleGenerateByWeakPoints()}>
+              根据薄弱点生成练习
+            </Button>
+          </Space>
+        </Space>
+
+        {errorText && <Alert type="error" showIcon style={{ marginBottom: 16 }} message={errorText} />}
+        {notice && <Alert type="info" showIcon style={{ marginBottom: 16 }} message={notice} />}
+        <Empty description="暂无可展示练习" />
+      </div>
+    )
+  }
 
   if (finished) {
     const correctCount = Object.values(answers).filter((item) => item.correct).length
@@ -322,13 +355,20 @@ export default function Exercises() {
         </Space>
       </Space>
 
-      {notice && (
-        <Alert
-          type={q?.source === 'generated' && q.generation_method === 'fallback' ? 'warning' : 'info'}
-          showIcon
-          style={{ marginBottom: 16 }}
-          message={notice}
-        />
+      {errorText && <Alert type="error" showIcon style={{ marginBottom: 16 }} message={errorText} />}
+      {notice && <Alert type="info" showIcon style={{ marginBottom: 16 }} message={notice} />}
+
+      {targetKnowledgePoints.length > 0 && (
+        <Card style={{ borderRadius: 8, marginBottom: 16 }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>本次练习聚焦的薄弱点</div>
+          <Space wrap>
+            {targetKnowledgePoints.map((item) => (
+              <Tag key={item.knowledge_unit_id} color={item.mastery_score < 0.25 ? 'error' : 'warning'}>
+                {item.name} · 掌握度 {Math.round(item.mastery_score * 100)}%
+              </Tag>
+            ))}
+          </Space>
+        </Card>
       )}
 
       <Card style={{ borderRadius: 8, marginBottom: 16 }}>
@@ -345,52 +385,48 @@ export default function Exercises() {
 
       <Card style={{ borderRadius: 8, marginBottom: 16 }} loading={loading && !submitted}>
         <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 16, lineHeight: 1.7 }}>{q?.question || '暂无题目内容'}</div>
-        {normalizedOptions.length === 0 ? (
-          <Empty description="当前题目暂无可展示选项，请刷新重试" />
-        ) : (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            {normalizedOptions.map((option) => {
-              const correctAnswer = attemptResult?.answer || q?.answer
-              const isCorrect = option.key === correctAnswer
-              const isSelected = option.key === selected
-              let background = 'transparent'
-              let border = '1px solid #e8e8e8'
-              if (submitted) {
-                if (isCorrect) {
-                  background = '#f6ffed'
-                  border = '1px solid #b7eb8f'
-                } else if (isSelected) {
-                  background = '#fff1f0'
-                  border = '1px solid #ffa39e'
-                }
+        <Space direction="vertical" style={{ width: '100%' }}>
+          {normalizedOptions.map((option) => {
+            const correctAnswer = attemptResult?.answer || q?.answer
+            const isCorrect = option.key === correctAnswer
+            const isSelected = option.key === selected
+            let background = 'transparent'
+            let border = '1px solid #e8e8e8'
+            if (submitted) {
+              if (isCorrect) {
+                background = '#f6ffed'
+                border = '1px solid #b7eb8f'
               } else if (isSelected) {
-                background = '#e6f4ff'
-                border = '1px solid #91caff'
+                background = '#fff1f0'
+                border = '1px solid #ffa39e'
               }
-              return (
-                <div
-                  key={option.key}
-                  onClick={() => {
-                    if (!submitted) setSelected(option.key)
-                  }}
-                  style={{ padding: '12px 16px', borderRadius: 8, cursor: submitted ? 'default' : 'pointer', background, border, display: 'flex', alignItems: 'center', gap: 10 }}
-                >
-                  <strong>{option.key}.</strong>
-                  <span style={{ flex: 1 }}>{option.label}</span>
-                  {submitted && isCorrect && <CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                  {submitted && isSelected && !isCorrect && <CloseCircleOutlined style={{ color: '#ff4d4f' }} />}
-                </div>
-              )
-            })}
-          </Space>
-        )}
+            } else if (isSelected) {
+              background = '#e6f4ff'
+              border = '1px solid #91caff'
+            }
+            return (
+              <div
+                key={option.key}
+                onClick={() => {
+                  if (!submitted) setSelected(option.key)
+                }}
+                style={{ padding: '12px 16px', borderRadius: 8, cursor: submitted ? 'default' : 'pointer', background, border, display: 'flex', alignItems: 'center', gap: 10 }}
+              >
+                <strong>{option.key}.</strong>
+                <span style={{ flex: 1 }}>{option.label}</span>
+                {submitted && isCorrect && <CheckCircleOutlined style={{ color: '#52c41a' }} />}
+                {submitted && isSelected && !isCorrect && <CloseCircleOutlined style={{ color: '#ff4d4f' }} />}
+              </div>
+            )
+          })}
+        </Space>
         {submitted && (
           <Alert
-            type={Boolean(attemptResult?.correct ?? attemptResult?.is_correct) ? 'success' : 'error'}
+            type={Boolean(attemptResult?.is_correct) ? 'success' : 'error'}
             showIcon
             style={{ marginTop: 16 }}
-            message={Boolean(attemptResult?.correct ?? attemptResult?.is_correct) ? '回答正确' : `回答错误${attemptResult?.answer || q?.answer ? `，正确答案是 ${attemptResult?.answer || q?.answer}` : ''}`}
-            description={attemptResult?.feedback || attemptResult?.explanation || q?.explanation || '暂无反馈'}
+            message={Boolean(attemptResult?.is_correct) ? '回答正确' : `回答错误${attemptResult?.answer || q?.answer ? `，正确答案是 ${attemptResult?.answer || q?.answer}` : ''}`}
+            description={attemptResult?.feedback || q?.explanation || '暂无反馈'}
           />
         )}
       </Card>
