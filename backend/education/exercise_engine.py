@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from core.normalization import extract_json_value
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -211,22 +212,7 @@ def _clamp_int(value: int, *, minimum: int, maximum: int) -> int:
 
 
 def _safe_json_loads(raw: str) -> Any:
-    text = raw.strip()
-    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, flags=re.DOTALL | re.IGNORECASE)
-    if fenced:
-        text = fenced.group(1).strip()
-
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start_candidates = [idx for idx in (text.find("["), text.find("{")) if idx >= 0]
-        if not start_candidates:
-            raise
-        start = min(start_candidates)
-        end = max(text.rfind("]"), text.rfind("}"))
-        if end <= start:
-            raise
-        return json.loads(text[start : end + 1])
+    return extract_json_value(raw)
 
 
 def _normalize_choice_options(options: Any) -> list[dict[str, str]]:

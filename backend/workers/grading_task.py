@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from agent_core.agent_base import AgentConfig, GradingAgent
 from core.config import get_settings
+from core.normalization import extract_json_object, normalize_bounded_score, normalize_string_list
 from education.exercise_engine import DEFAULT_INITIAL_MASTERY, apply_mastery_update
 from models.assignment import Assignment, GradingResult, Submission, SubmissionAnnotation, SubmissionStatus
 from models.course import KnowledgeUnit
@@ -49,41 +49,11 @@ def _knowledge_point_ids(value: list | None) -> list[int]:
 
 
 def _safe_json_loads(raw_text: str) -> dict[str, Any]:
-    text = raw_text.strip()
-    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
-    if fenced:
-        text = fenced.group(1).strip()
-    else:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            text = text[start : end + 1]
-
-    data = json.loads(text)
-    if not isinstance(data, dict):
-        raise ValueError("LLM grading output must be a JSON object")
-    return data
-
-
-def _normalize_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    text = str(value).strip()
-    return [text] if text else []
+    return extract_json_object(raw_text, error_message="LLM grading output must be a JSON object")
 
 
 def _normalize_score(value: Any, max_score: float) -> float:
-    try:
-        if isinstance(value, str):
-            match = re.search(r"-?\d+(?:\.\d+)?", value)
-            score = float(match.group(0)) if match else 0.0
-        else:
-            score = float(value)
-    except (TypeError, ValueError):
-        score = 0.0
-    return round(min(max(score, 0.0), float(max_score)), 2)
+    return normalize_bounded_score(value, max_score)
 
 
 def _file_type_from_path(path: str | None) -> str:
@@ -263,8 +233,8 @@ def _standardize_grading_payload(
         "score": score,
         "max_score": max_score,
         "overall_comment": overall_comment,
-        "strengths": _normalize_list(data.get("strengths")),
-        "weaknesses": _normalize_list(data.get("weaknesses")),
+        "strengths": normalize_string_list(data.get("strengths")),
+        "weaknesses": normalize_string_list(data.get("weaknesses")),
         "annotations": _normalize_annotations(data.get("annotations"), knowledge_point_ids=knowledge_point_ids),
         "knowledge_point_scores": _normalize_knowledge_scores(
             data.get("knowledge_point_scores"),

@@ -7,10 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from core.permissions import ensure_course_access, ensure_course_manager, ensure_submission_access
 from core.security import get_current_user
 from core.storage import remove_object, upload_bytes
 from models.assignment import Assignment, GradingResult, Submission, SubmissionAnnotation, SubmissionStatus
-from models.course import Course, Enrollment
+from models.course import Course
 from models.user import User, UserRole
 from workers.grading_task import grade_submission
 
@@ -98,38 +99,6 @@ async def _get_submission_context(db: AsyncSession, submission_id: int) -> tuple
     return row
 
 
-async def _ensure_course_access(db: AsyncSession, *, course: Course, user: User) -> None:
-    if user.role == UserRole.ADMIN:
-        return
-    if user.role == UserRole.TEACHER and course.teacher_id == user.id:
-        return
-    if user.role == UserRole.STUDENT:
-        enrollment_result = await db.execute(
-            select(Enrollment.id).where(Enrollment.course_id == course.id, Enrollment.student_id == user.id)
-        )
-        if enrollment_result.scalar_one_or_none() is not None:
-            return
-    raise HTTPException(status_code=403, detail="Not allowed to access this course")
-
-
-def _ensure_teacher_or_admin_for_course(*, course: Course, user: User) -> None:
-    if user.role == UserRole.ADMIN:
-        return
-    if user.role == UserRole.TEACHER and course.teacher_id == user.id:
-        return
-    raise HTTPException(status_code=403, detail="Teacher or admin access required")
-
-
-def _ensure_submission_access(*, submission: Submission, course: Course, user: User) -> None:
-    if user.role == UserRole.ADMIN:
-        return
-    if user.role == UserRole.TEACHER and course.teacher_id == user.id:
-        return
-    if user.role == UserRole.STUDENT and submission.student_id == user.id:
-        return
-    raise HTTPException(status_code=403, detail="Not allowed to access this submission")
-
-
 @router.post("", response_model=AssignmentResponse)
 async def create_assignment(
     data: AssignmentCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
@@ -141,7 +110,7 @@ async def create_assignment(
     course = course_result.scalar_one_or_none()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
-    _ensure_teacher_or_admin_for_course(course=course, user=user)
+    ensure_course_manager(course=course, user=user)
 
     assignment = Assignment(**data.model_dump(), created_by=user.id)
     db.add(assignment)
@@ -160,7 +129,7 @@ async def list_assignments(
     course = course_result.scalar_one_or_none()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
-    await _ensure_course_access(db, course=course, user=user)
+    await ensure_course_access(db, course=course, user=user)
 
     result = await db.execute(
         select(Assignment).where(Assignment.course_id == course_id).order_by(Assignment.created_at.desc())
@@ -180,7 +149,7 @@ async def submit_assignment(
         raise HTTPException(status_code=400, detail="Submission content cannot be empty")
 
     assignment, course = await _get_course_for_assignment(db, assignment_id)
-    await _ensure_course_access(db, course=course, user=user)
+    await ensure_course_access(db, course=course, user=user)
     if user.role != UserRole.STUDENT:
         raise HTTPException(status_code=403, detail="Only students can submit assignments")
 
@@ -258,7 +227,7 @@ async def get_grading_result(
     user: User = Depends(get_current_user),
 ):
     submission, _assignment, course = await _get_submission_context(db, submission_id)
-    _ensure_submission_access(submission=submission, course=course, user=user)
+    ensure_submission_access(submission=submission, course=course, user=user)
 
     if submission.status == SubmissionStatus.FAILED:
         raise HTTPException(status_code=409, detail="Grading failed")
@@ -279,7 +248,7 @@ async def get_annotations(
     user: User = Depends(get_current_user),
 ):
     submission, _assignment, course = await _get_submission_context(db, submission_id)
-    _ensure_submission_access(submission=submission, course=course, user=user)
+    ensure_submission_access(submission=submission, course=course, user=user)
 
     if submission.status == SubmissionStatus.FAILED:
         raise HTTPException(status_code=409, detail="Grading failed")

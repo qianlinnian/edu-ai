@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import json
-import re
 from abc import ABC
 from dataclasses import dataclass, field
 from typing import Any
 
 from agent_core.llm_provider import BaseLLMProvider, get_llm_provider
 from agent_core.rag_chain import get_context
+from core.normalization import (
+    extract_json_object,
+    extract_json_object_list,
+    normalize_bounded_score,
+    normalize_string_list,
+)
 
 
 DEFAULT_QA_SYSTEM_PROMPT = (
@@ -73,60 +78,15 @@ def build_qa_system_prompt(base_prompt: str, retrieved_context: str) -> str:
 
 
 def _safe_json_object(raw_text: str) -> dict[str, Any]:
-    text = raw_text.strip()
-    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
-    if fenced:
-        text = fenced.group(1).strip()
-    else:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            text = text[start : end + 1]
-
-    data = json.loads(text)
-    if not isinstance(data, dict):
-        raise ValueError("LLM output must be a JSON object")
-    return data
+    return extract_json_object(raw_text, error_message="LLM output must be a JSON object")
 
 
 def _safe_json_array(raw_text: str) -> list[dict[str, Any]]:
-    text = raw_text.strip()
-    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
-    if fenced:
-        text = fenced.group(1).strip()
-    else:
-        start = text.find("[")
-        end = text.rfind("]")
-        if start >= 0 and end > start:
-            text = text[start : end + 1]
-
-    data = json.loads(text)
-    if isinstance(data, list):
-        return [item for item in data if isinstance(item, dict)]
-    if isinstance(data, dict) and isinstance(data.get("exercises"), list):
-        return [item for item in data["exercises"] if isinstance(item, dict)]
-    raise ValueError("LLM output must be a JSON array")
-
-
-def _normalize_string_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    text = str(value).strip()
-    return [text] if text else []
+    return extract_json_object_list(raw_text, list_key="exercises", error_message="LLM output must be a JSON array")
 
 
 def _normalize_score(value: Any, max_score: float) -> float:
-    try:
-        if isinstance(value, str):
-            match = re.search(r"-?\d+(?:\.\d+)?", value)
-            numeric = float(match.group(0)) if match else 0.0
-        else:
-            numeric = float(value)
-    except (TypeError, ValueError):
-        numeric = 0.0
-    return round(min(max(numeric, 0.0), max_score), 2)
+    return normalize_bounded_score(value, max_score)
 
 
 def normalize_agent_grading_result(data: dict[str, Any] | None, *, max_score: float) -> dict[str, Any]:
@@ -163,8 +123,8 @@ def normalize_agent_grading_result(data: dict[str, Any] | None, *, max_score: fl
         "score": _normalize_score(data.get("score"), max_score),
         "max_score": max_score,
         "overall_comment": str(data.get("overall_comment") or data.get("comment") or "Automatic grading completed.").strip(),
-        "strengths": _normalize_string_list(data.get("strengths")),
-        "weaknesses": _normalize_string_list(data.get("weaknesses")),
+        "strengths": normalize_string_list(data.get("strengths")),
+        "weaknesses": normalize_string_list(data.get("weaknesses")),
         "annotations": normalized_annotations,
         "knowledge_point_scores": {
             str(key): _normalize_score(value, 100.0)
