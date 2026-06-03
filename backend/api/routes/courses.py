@@ -45,6 +45,16 @@ class CourseResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CourseBrowseResponse(BaseModel):
+    id: int
+    name: str
+    code: str
+    description: str | None
+    domain: str
+    teacher_id: int
+    enrolled: bool
+
+
 class KnowledgeUnitCreate(BaseModel):
     name: str
     description: str | None = None
@@ -131,6 +141,35 @@ async def list_courses(db: AsyncSession = Depends(get_db), user: User = Depends(
     return result.scalars().all()
 
 
+@router.get("/browse", response_model=list[CourseBrowseResponse])
+async def browse_courses(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Only students can browse course enrollment options")
+
+    query = select(Course).where(Course.is_active.is_(True)).order_by(Course.created_at.desc())
+    result = await db.execute(query)
+    courses = result.scalars().all()
+
+    enrolled_course_ids = set(
+        (
+            await db.execute(select(Enrollment.course_id).where(Enrollment.student_id == user.id))
+        ).scalars().all()
+    )
+
+    return [
+        CourseBrowseResponse(
+            id=course.id,
+            name=course.name,
+            code=course.code,
+            description=course.description,
+            domain=course.domain,
+            teacher_id=course.teacher_id,
+            enrolled=course.id in enrolled_course_ids,
+        )
+        for course in courses
+    ]
+
+
 @router.get("/{course_id}", response_model=CourseResponse)
 async def get_course(
     course_id: int,
@@ -156,6 +195,23 @@ async def enroll_course(course_id: int, db: AsyncSession = Depends(get_db), user
     db.add(enrollment)
     await db.flush()
     return {"message": "enrolled"}
+
+
+@router.delete("/{course_id}/enroll")
+async def unenroll_course(course_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Only students can unenroll from courses")
+    await _get_course_or_404(db, course_id)
+    existing = await db.execute(
+        select(Enrollment).where(Enrollment.student_id == user.id, Enrollment.course_id == course_id)
+    )
+    enrollment = existing.scalar_one_or_none()
+    if enrollment is None:
+        raise HTTPException(status_code=404, detail="Enrollment not found")
+
+    await db.delete(enrollment)
+    await db.flush()
+    return {"message": "unenrolled"}
 
 
 @router.get("/{course_id}/students", response_model=list[CourseStudentResponse])
