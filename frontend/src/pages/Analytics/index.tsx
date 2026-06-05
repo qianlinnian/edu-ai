@@ -107,6 +107,8 @@ export default function Analytics() {
   const [weakPoints, setWeakPoints] = useState<WeakPointItem[]>([])
   const [classReport, setClassReport] = useState<ClassReport | null>(null)
   const [alerts, setAlerts] = useState<AlertItem[]>([])
+  const [studentAlerts, setStudentAlerts] = useState<AlertItem[]>([])
+  const [classAlerts, setClassAlerts] = useState<AlertItem[]>([])
   const [loading, setLoading] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
 
@@ -114,18 +116,18 @@ export default function Analytics() {
   const classBarOption = useMemo(() => buildClassBarOption(classReport?.by_knowledge_unit || []), [classReport])
 
   const loadStudentSlice = async (courseId: number, studentId: number) => {
-    const [masteryRes, weakRes, alertsRes] = await Promise.all([
+    const [masteryRes, weakRes, studentAlertsRes] = await Promise.all([
       analyticsAPI.getStudentMastery(studentId, courseId),
       analyticsAPI.getWeakPoints(studentId, courseId),
-      analyticsAPI.getAlerts(courseId),
+      analyticsAPI.getAlerts(courseId, studentId),
     ])
     setMastery(mapMastery(masteryRes.data || []))
     setWeakPoints(weakRes.data || [])
-    setAlerts(alertsRes.data || [])
+    setStudentAlerts(studentAlertsRes.data || [])
   }
 
   const loadTeacherAnalytics = async (courseId: number, studentId?: number) => {
-    const [reportRes, alertsRes, studentsRes] = await Promise.all([
+    const [reportRes, classAlertsRes, studentsRes] = await Promise.all([
       analyticsAPI.getClassReport(courseId),
       analyticsAPI.getAlerts(courseId),
       courseAPI.listStudents(courseId),
@@ -136,7 +138,14 @@ export default function Analytics() {
     setStudents(nextStudents)
     setSelectedStudentId(activeStudentId)
     setClassReport(reportRes.data)
-    setAlerts(alertsRes.data || [])
+    setClassAlerts(classAlertsRes.data || [])
+
+    if (activeStudentId) {
+      const studentAlertsRes = await analyticsAPI.getAlerts(courseId, activeStudentId)
+      setStudentAlerts(studentAlertsRes.data || [])
+    } else {
+      setStudentAlerts([])
+    }
 
     if (activeStudentId) {
       await loadStudentSlice(courseId, activeStudentId)
@@ -283,10 +292,12 @@ export default function Analytics() {
             </Card>
           </Col>
           <Col xs={24} lg={14}>
-            <Card title={<span><AlertOutlined style={{ color: '#ff4d4f', marginRight: 6 }} />学习预警</span>} loading={loading} style={{ borderRadius: 8 }}>
-              {alerts.length === 0 ? <Empty description="暂无预警信息" /> : (
+            <Card title="学习预警" loading={loading} style={{ borderRadius: 8 }}>
+              {(selectedStudentId ? studentAlerts : classAlerts).length === 0 ? (
+                <Empty description={selectedStudentId ? '暂无该学生预警信息' : '暂无预警信息'} />
+              ) : (
                 <List
-                  dataSource={alerts}
+                  dataSource={selectedStudentId ? studentAlerts : classAlerts}
                   renderItem={(item) => (
                     <List.Item>
                       <Alert

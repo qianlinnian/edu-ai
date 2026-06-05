@@ -362,7 +362,7 @@ export default function PlatformConfig() {
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message="字段来源统一口径"
+          message="widget_url 说明"
           description="course_id 和 role 来自上游平台请求；token 由 EduAI 后端签发；widget_url 由 EduAI 后端根据 course_id + token 组装后返回。"
         />
 

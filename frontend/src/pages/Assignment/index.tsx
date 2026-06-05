@@ -7,7 +7,7 @@ import {
   ArrowLeftOutlined, CodeOutlined, EyeOutlined, PlusOutlined, RobotOutlined, SendOutlined, UploadOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { assignmentAPI, courseAPI } from '../../services/api'
+import { assignmentAPI, courseAPI, getErrorMessage } from '../../services/api'
 import { useAuthStore } from '../../hooks/useAuthStore'
 
 type Course = { id: number; name: string; code: string; domain: string; description?: string | null }
@@ -93,8 +93,8 @@ export default function Assignment() {
       setCourses(courseData)
       if (courseData.length && !selectedCourseId) setSelectedCourseId(courseData[0].id)
       await loadAssignments(courseData)
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '作业数据加载失败')
+    } catch (error) {
+      message.error(getErrorMessage(error, '作业数据加载失败'))
     } finally {
       setLoading(false)
     }
@@ -105,9 +105,9 @@ export default function Assignment() {
     try {
       const { data } = await assignmentAPI.listSubmissions(assignmentId)
       setSubmissions(data)
-    } catch (error: any) {
+    } catch (error) {
       setSubmissions([])
-      message.error(error?.response?.data?.detail || '提交列表加载失败')
+      message.error(getErrorMessage(error, '提交列表加载失败'))
     } finally {
       setSubmissionsLoading(false)
     }
@@ -149,8 +149,8 @@ export default function Assignment() {
       setCreateOpen(false)
       createForm.resetFields()
       await loadData()
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '作业创建失败')
+    } catch (error) {
+      message.error(getErrorMessage(error, '作业创建失败'))
     } finally {
       setLoading(false)
     }
@@ -180,8 +180,8 @@ export default function Assignment() {
       setSubmitFile(undefined)
       if (selectedAssignment) await loadSubmissions(selectedAssignment.id)
       if (submissionId) navigate(`/grading/${submissionId}`)
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '提交失败')
+    } catch (error) {
+      message.error(getErrorMessage(error, '提交失败'))
     } finally {
       setSubmitting(false)
     }

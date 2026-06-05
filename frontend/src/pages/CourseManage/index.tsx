@@ -466,18 +466,6 @@ export default function CourseManage() {
     },
   ]
 
-  const teacherResourceColumns = [
-    ...resourceColumns.slice(0, 5),
-    {
-      title: '错误信息',
-      dataIndex: 'processing_error',
-      render: (error?: string | null) => (
-        error ? <Typography.Text type="danger">{formatProcessingError(error)}</Typography.Text> : '-'
-      ),
-    },
-    resourceColumns[5],
-  ]
-
   const formItems = (
     <>
       <Form.Item name="name" label="课程名称" rules={[{ required: true, message: '请输入课程名称' }]}>
@@ -769,7 +757,32 @@ export default function CourseManage() {
                     rowKey="id"
                     loading={loadingResources}
                     pagination={false}
-                    columns={teacherResourceColumns}
+                    columns={[
+                      ...resourceColumns.slice(0, 5),
+                      {
+                        title: '错误信息',
+                        dataIndex: 'processing_error',
+                        render: (error?: string | null) => (
+                          error ? <Typography.Text type="danger">{formatProcessingError(error)}</Typography.Text> : '-'
+                        ),
+                      },
+                      {
+                        title: '操作',
+                        key: 'action',
+                        render: (_: unknown, row: Resource) => (
+                          <Space>
+                            <Button
+                              icon={<DownloadOutlined />}
+                              size="small"
+                              loading={downloadingId === row.id}
+                              onClick={() => void handleDownload(row)}
+                            >
+                              下载
+                            </Button>
+                          </Space>
+                        ),
+                      },
+                    ]}
                     locale={{ emptyText: <Empty description="暂无资源记录" /> }}
                   />
                 </div>
