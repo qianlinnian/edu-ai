@@ -326,9 +326,11 @@ flowchart TD
     OK -->|否| FIX[修改配置]
     FIX --> TEST
 
-    OK -->|是| PUBLISH[发布 Agent]
-    PUBLISH --> SUCCESS[创建成功]
-    SUCCESS --> END([结束])
+    OK -->|是| PUBLISH[发布 Agent 配置]
+    PUBLISH --> MAP[映射为线性 QA 运行配置]
+    MAP --> SUCCESS[创建成功]
+    SUCCESS --> NOTE[当前边界：可视化配置器，不宣称通用 DAG 运行引擎]
+    NOTE --> END([结束])
 ```
 
 ### 4.3 平台嵌入启动流程
@@ -339,15 +341,15 @@ flowchart TB
 
     PLATFORM -->|超星| CHAOXING[超星平台]
     CHAOXING --> LTI[点击 EduAI 嵌入]
-    LTI --> REQUEST[发送 LTI Launch]
-    REQUEST --> VALIDATE[验证 LTI 参数]
-    VALIDATE -->|有效| REDIRECT[重定向到 Widget]
+    LTI --> REQUEST[发送模拟 LTI Launch]
+    REQUEST --> VALIDATE[校验启动参数]
+    VALIDATE -->|有效| REDIRECT[返回 Widget URL]
     VALIDATE -->|无效| ERROR1[返回错误]
 
     PLATFORM -->|钉钉| DINGTALK[钉钉 H5 应用]
     DINGTALK --> AUTH[获取免登授权码]
-    AUTH --> EXCHANGE[code 换取用户]
-    EXCHANGE -->|成功| REDIRECT2[重定向到 Widget]
+    AUTH --> EXCHANGE[模拟 code 换取会话]
+    EXCHANGE -->|成功| REDIRECT2[返回 Widget URL]
     EXCHANGE -->|失败| ERROR2[返回错误]
 
     REDIRECT & REDIRECT2 --> WIDGET[加载 Widget]
@@ -355,7 +357,8 @@ flowchart TB
 
     WIDGET --> INIT[初始化会话]
     INIT --> READY[Widget 就绪]
-    READY --> END([结束])
+    READY --> NOTE[当前边界：未覆盖真实平台联调、真实签名校验与业务回流]
+    NOTE --> END([结束])
 ```
 
 ---
