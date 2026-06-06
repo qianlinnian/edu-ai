@@ -218,10 +218,13 @@ export const authAPI = {
 
 export const courseAPI = {
   list: (authToken?: string) => api.get('/courses', buildAuthConfig(authToken)),
+  browse: (authToken?: string) => api.get('/courses/browse', buildAuthConfig(authToken)),
   get: (id: number, authToken?: string) => api.get(`/courses/${id}`, buildAuthConfig(authToken)),
   create: (data: any) => api.post('/courses', data),
   update: (id: number, data: any) => api.put(`/courses/${id}`, data),
   remove: (id: number) => api.delete(`/courses/${id}`),
+  enroll: (courseId: number) => api.post(`/courses/${courseId}/enroll`),
+  unenroll: (courseId: number) => api.delete(`/courses/${courseId}/enroll`),
   listResources: (courseId: number, authToken?: string) =>
     api.get(`/courses/${courseId}/resources`, buildAuthConfig(authToken)),
   downloadResource: (courseId: number, resourceId: number, authToken?: string) =>

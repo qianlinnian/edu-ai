@@ -25,9 +25,11 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
+  ExportOutlined,
   FilePdfOutlined,
   FilePptOutlined,
   FileWordOutlined,
+  LoginOutlined,
   LoadingOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -44,6 +46,10 @@ type Course = {
   description?: string | null
   domain: string
   teacher_id: number
+}
+
+type CourseBrowseItem = Course & {
+  enrolled: boolean
 }
 
 type Resource = {
@@ -113,6 +119,7 @@ export default function CourseManage() {
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin'
 
   const [courses, setCourses] = useState<Course[]>([])
+  const [browseCourses, setBrowseCourses] = useState<CourseBrowseItem[]>([])
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null)
   const [resources, setResources] = useState<Resource[]>([])
   const [knowledgeUnits, setKnowledgeUnits] = useState<KnowledgeUnit[]>([])
@@ -127,6 +134,8 @@ export default function CourseManage() {
   const [uploading, setUploading] = useState(false)
   const [creatingKnowledge, setCreatingKnowledge] = useState(false)
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
+  const [enrollingId, setEnrollingId] = useState<number | null>(null)
+  const [unenrollingId, setUnenrollingId] = useState<number | null>(null)
   const [form] = Form.useForm()
   const [editForm] = Form.useForm()
   const [knowledgeForm] = Form.useForm()
@@ -158,10 +167,27 @@ export default function CourseManage() {
   const loadCourses = async () => {
     setLoadingCourses(true)
     try {
-      const { data } = await courseAPI.list()
-      setCourses(data)
+      if (isTeacher) {
+        const { data } = await courseAPI.list()
+        setCourses(data)
+        setBrowseCourses(data.map((item: Course) => ({ ...item, enrolled: true })))
+        if (selectedCourse) {
+          const latest = data.find((item: Course) => item.id === selectedCourse.id)
+          setSelectedCourse(latest ?? null)
+        }
+        return
+      }
+
+      const [enrolledRes, browseRes] = await Promise.all([
+        courseAPI.list(),
+        courseAPI.browse(),
+      ])
+      const enrolledCourses = enrolledRes.data as Course[]
+      const browseCourseList = browseRes.data as CourseBrowseItem[]
+      setCourses(enrolledCourses)
+      setBrowseCourses(browseCourseList)
       if (selectedCourse) {
-        const latest = data.find((item: Course) => item.id === selectedCourse.id)
+        const latest = browseCourseList.find((item: CourseBrowseItem) => item.id === selectedCourse.id)
         setSelectedCourse(latest ?? null)
       }
     } catch (error) {
@@ -209,7 +235,7 @@ export default function CourseManage() {
 
   useEffect(() => {
     void loadCourses()
-  }, [])
+  }, [isTeacher])
 
   useEffect(() => {
     if (!selectedCourse) {
@@ -351,6 +377,35 @@ export default function CourseManage() {
     setEditOpen(true)
   }
 
+  const enrollCourse = async (course: CourseBrowseItem) => {
+    setEnrollingId(course.id)
+    try {
+      await courseAPI.enroll(course.id)
+      message.success('选课成功')
+      await loadCourses()
+    } catch (error) {
+      showRequestError(error, '选课失败')
+    } finally {
+      setEnrollingId(null)
+    }
+  }
+
+  const unenrollCourse = async (course: CourseBrowseItem) => {
+    setUnenrollingId(course.id)
+    try {
+      await courseAPI.unenroll(course.id)
+      message.success('退课成功')
+      if (selectedCourse?.id === course.id) {
+        setSelectedCourse(null)
+      }
+      await loadCourses()
+    } catch (error) {
+      showRequestError(error, '退课失败')
+    } finally {
+      setUnenrollingId(null)
+    }
+  }
+
   const resourceColumns = [
     {
       title: '文件名',
@@ -411,18 +466,6 @@ export default function CourseManage() {
     },
   ]
 
-  const teacherResourceColumns = [
-    ...resourceColumns.slice(0, 5),
-    {
-      title: '错误信息',
-      dataIndex: 'processing_error',
-      render: (error?: string | null) => (
-        error ? <Typography.Text type="danger">{formatProcessingError(error)}</Typography.Text> : '-'
-      ),
-    },
-    resourceColumns[5],
-  ]
-
   const formItems = (
     <>
       <Form.Item name="name" label="课程名称" rules={[{ required: true, message: '请输入课程名称' }]}>
@@ -440,15 +483,53 @@ export default function CourseManage() {
     </>
   )
 
-  const renderCourseCards = () => (
+  const renderCourseCards = (items: CourseBrowseItem[], mode: 'teacher' | 'student-enrolled' | 'student-available') => (
     <Row gutter={[16, 16]}>
-      {courses.map((course) => {
+      {items.map((course) => {
         const color = colorMap.get(course.id) ?? colors[0]
+        const isEnrolled = course.enrolled
+        const studentAction = mode === 'student-enrolled'
+          ? (
+            <Popconfirm
+              key="unenroll"
+              title="确认退选这门课程？"
+              okText="退课"
+              cancelText="取消"
+              onConfirm={() => void unenrollCourse(course)}
+            >
+              <Button
+                size="small"
+                icon={<ExportOutlined />}
+                loading={unenrollingId === course.id}
+                onClick={(event) => event.stopPropagation()}
+              >
+                退课
+              </Button>
+            </Popconfirm>
+          )
+          : (
+            <Button
+              size="small"
+              type="primary"
+              icon={<LoginOutlined />}
+              loading={enrollingId === course.id}
+              onClick={(event) => {
+                event.stopPropagation()
+                void enrollCourse(course)
+              }}
+            >
+              选课
+            </Button>
+          )
         return (
           <Col key={course.id} xs={24} sm={12} lg={8}>
             <Card
               hoverable
-              onClick={() => setSelectedCourse(course)}
+              onClick={() => {
+                if (mode !== 'student-available' || isEnrolled) {
+                  setSelectedCourse(course)
+                }
+              }}
               style={{
                 borderRadius: 16,
                 border: '1px solid #e5edf7',
@@ -468,7 +549,12 @@ export default function CourseManage() {
                 >
                   <Typography.Text type="danger" onClick={(event) => event.stopPropagation()}>删除</Typography.Text>
                 </Popconfirm>,
-              ] : undefined}
+              ] : mode === 'student-enrolled' ? [
+                <span key="enter" onClick={() => setSelectedCourse(course)}>进入课程</span>,
+                <span key="unenroll-action" onClick={(event) => event.stopPropagation()}>{studentAction}</span>,
+              ] : [
+                <span key="enroll-action" onClick={(event) => event.stopPropagation()}>{studentAction}</span>,
+              ]}
             >
               <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                 <Avatar size={48} style={{ background: color, fontWeight: 700, flexShrink: 0 }}>
@@ -488,7 +574,10 @@ export default function CourseManage() {
                   </Typography.Paragraph>
                   <Space size={10} wrap>
                     <Tag>{course.domain}</Tag>
-                    <Badge status="processing" text={<span style={{ fontSize: 12 }}>可查看资料</span>} />
+                    <Badge
+                      status={isEnrolled ? 'processing' : 'default'}
+                      text={<span style={{ fontSize: 12 }}>{isEnrolled ? '已选课程' : '可选课程'}</span>}
+                    />
                   </Space>
                 </div>
               </div>
@@ -574,14 +663,37 @@ export default function CourseManage() {
   }
 
   if (!isTeacher) {
+    const enrolledCourses = browseCourses.filter((course) => course.enrolled)
+    const availableCourses = browseCourses.filter((course) => !course.enrolled)
+
     return (
       <div>
         <Typography.Title level={4}>我的课程</Typography.Title>
-        {courses.length === 0 && !loadingCourses ? (
-          <Empty description="暂无课程" />
-        ) : (
-          renderCourseCards()
-        )}
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="学生选课"
+          description="已选课程可进入课程查看资料，也可退课；未选课程可直接选课。"
+        />
+
+        <div style={{ marginBottom: 24 }}>
+          <Typography.Title level={5}>已选课程</Typography.Title>
+          {enrolledCourses.length === 0 && !loadingCourses ? (
+            <Empty description="当前还没有已选课程" />
+          ) : (
+            renderCourseCards(enrolledCourses, 'student-enrolled')
+          )}
+        </div>
+
+        <div>
+          <Typography.Title level={5}>可选课程</Typography.Title>
+          {availableCourses.length === 0 && !loadingCourses ? (
+            <Empty description="当前没有可选课程" />
+          ) : (
+            renderCourseCards(availableCourses, 'student-available')
+          )}
+        </div>
       </div>
     )
   }
@@ -645,7 +757,32 @@ export default function CourseManage() {
                     rowKey="id"
                     loading={loadingResources}
                     pagination={false}
-                    columns={teacherResourceColumns}
+                    columns={[
+                      ...resourceColumns.slice(0, 5),
+                      {
+                        title: '错误信息',
+                        dataIndex: 'processing_error',
+                        render: (error?: string | null) => (
+                          error ? <Typography.Text type="danger">{formatProcessingError(error)}</Typography.Text> : '-'
+                        ),
+                      },
+                      {
+                        title: '操作',
+                        key: 'action',
+                        render: (_: unknown, row: Resource) => (
+                          <Space>
+                            <Button
+                              icon={<DownloadOutlined />}
+                              size="small"
+                              loading={downloadingId === row.id}
+                              onClick={() => void handleDownload(row)}
+                            >
+                              下载
+                            </Button>
+                          </Space>
+                        ),
+                      },
+                    ]}
                     locale={{ emptyText: <Empty description="暂无资源记录" /> }}
                   />
                 </div>
@@ -789,7 +926,7 @@ export default function CourseManage() {
       {courses.length === 0 && !loadingCourses ? (
         <Empty description="暂无课程，请先创建课程。" />
       ) : (
-        renderCourseCards()
+        renderCourseCards(browseCourses, 'teacher')
       )}
 
       <Modal
