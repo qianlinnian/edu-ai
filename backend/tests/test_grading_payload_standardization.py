@@ -5,6 +5,7 @@ import asyncio
 from models.assignment import Assignment, Submission
 from workers.grading_task import (
     _fallback_grading,
+    _resolve_course_llm_config,
     _grade_with_llm,
     _safe_json_loads,
     _standardize_grading_payload,
@@ -179,3 +180,73 @@ def test_grade_with_llm_delegates_to_grading_agent_and_keeps_worker_contract(mon
     assert result["source"] == "llm"
     assert result["annotations"][0]["knowledge_point_id"] is None
     assert result["knowledge_point_scores"] == {"1": 88.0}
+
+
+def test_resolve_course_llm_config_prefers_active_course_agent() -> None:
+    class FakeResult:
+        def __init__(self, scalar):
+            self._scalar = scalar
+
+        def scalar_one_or_none(self):
+            return self._scalar
+
+    class FakeDB:
+        def execute(self, statement):
+            return FakeResult(
+                type(
+                    "Agent",
+                    (),
+                    {
+                        "llm_provider": "zhipu",
+                        "llm_model": "",
+                        "system_prompt": "course prompt",
+                    },
+                )()
+            )
+
+    config = _resolve_course_llm_config(FakeDB(), course_id=3)
+
+    assert config["source"] == "course_agent"
+    assert config["provider"] == "zhipu"
+    assert config["model"] == "glm-4"
+    assert config["system_prompt"] == "course prompt"
+
+
+def test_grade_with_llm_uses_course_agent_provider_and_model(monkeypatch) -> None:
+    captured: dict = {}
+
+    class FakeGradingAgent:
+        def __init__(self, config):
+            captured["config"] = config
+
+        async def grade(self, submission_content: str, assignment_info: dict) -> dict:
+            return {
+                "score": 92,
+                "overall_comment": "course agent graded",
+                "strengths": [],
+                "weaknesses": [],
+                "annotations": [],
+                "knowledge_point_scores": {"1": 92},
+                "source": "llm",
+            }
+
+    monkeypatch.setattr("workers.grading_task.GradingAgent", FakeGradingAgent)
+    monkeypatch.setattr(
+        "workers.grading_task._resolve_course_llm_config",
+        lambda db, *, course_id: {
+            "provider": "deepseek",
+            "model": "deepseek-chat",
+            "system_prompt": "course grading prompt",
+            "source": "course_agent",
+        },
+    )
+    assignment = make_assignment(max_score=100.0, knowledge_points=[1])
+    assignment.course_id = 9
+    submission = Submission(content="answer", file_path=None)
+
+    result = asyncio.run(_grade_with_llm(assignment=assignment, submission=submission, db=object()))
+
+    assert captured["config"].llm_provider == "deepseek"
+    assert captured["config"].llm_model == "deepseek-chat"
+    assert "course grading prompt" in captured["config"].system_prompt
+    assert result["score"] == 92.0

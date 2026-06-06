@@ -270,3 +270,80 @@ async def test_generated_attempt_skips_missing_knowledge_points():
     assert attempt.is_correct is True
     assert len(mastery_rows) == 1
     assert mastery_rows[0].knowledge_unit_id == 101
+
+
+@pytest.mark.asyncio
+async def test_generate_targeted_exercises_prefers_course_agent_llm_config(monkeypatch):
+    db = FakeDB(
+        results=[
+            FakeResult(scalar=SimpleNamespace(name="Data Structure", domain="cs")),
+            FakeResult(scalars=[]),
+            FakeResult(
+                scalar=SimpleNamespace(
+                    llm_provider="zhipu",
+                    llm_model="",
+                    system_prompt="course exercise prompt",
+                )
+            ),
+        ]
+    )
+    captured: dict = {}
+
+    class FakeProvider:
+        async def chat(self, messages, temperature=0.3):
+            captured["messages"] = messages
+            captured["temperature"] = temperature
+            return "ignored"
+
+    async def fake_knowledge_context(*args, **kwargs):
+        return [
+            {
+                "id": 101,
+                "name": "Loops",
+                "description": "desc",
+                "difficulty": 2,
+                "mastery_score": 0.18,
+                "attempt_count": 3,
+                "correct_count": 0,
+            }
+        ]
+
+    monkeypatch.setattr(exercise_engine, "_get_knowledge_context", fake_knowledge_context)
+    monkeypatch.setattr(
+        exercise_engine,
+        "get_llm_provider",
+        lambda provider, model: captured.update({"provider": provider, "model": model}) or FakeProvider(),
+    )
+    monkeypatch.setattr(
+        exercise_engine,
+        "_safe_json_loads",
+        lambda raw: {
+            "exercises": [
+                {
+                    "question": "Generated question",
+                    "options": [{"key": "A", "label": "Right"}, {"key": "B", "label": "Wrong"}],
+                    "answer": "A",
+                    "explanation": "Because A is correct.",
+                    "knowledge_point_ids": [101],
+                    "difficulty": 2,
+                }
+            ]
+        },
+    )
+
+    result = await exercise_engine.generate_targeted_exercises(
+        db,
+        student_id=11,
+        course_id=3,
+        knowledge_point_ids=[],
+        exercise_type=ExerciseType.CHOICE,
+        difficulty=2,
+        count=1,
+        use_llm=True,
+    )
+
+    assert captured["provider"] == "zhipu"
+    assert captured["model"] == "glm-4"
+    assert "course exercise prompt" in captured["messages"][0]["content"]
+    assert result["source"] == "generated"
+    assert result["generation_method"] == "llm"

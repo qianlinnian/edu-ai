@@ -1,4 +1,8 @@
+import pytest
+
 from agent_core.agent_base import (
+    AgentConfig,
+    QAAgent,
     build_qa_system_prompt,
     normalize_agent_grading_result,
     sanitize_history,
@@ -69,3 +73,33 @@ def test_normalize_agent_grading_result_contract() -> None:
     ]
     assert result["knowledge_point_scores"] == {"8": 72.5, "9": 100.0}
     assert result["source"] == "llm"
+
+
+@pytest.mark.asyncio
+async def test_qa_agent_uses_configured_top_k_for_rag(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_get_context(*, db, course_id, query, top_k):
+        captured["db"] = db
+        captured["course_id"] = course_id
+        captured["query"] = query
+        captured["top_k"] = top_k
+        return "资料1:\n命中上下文"
+
+    class FakeLLM:
+        async def chat(self, messages, temperature, max_tokens):
+            captured["messages"] = messages
+            return "ok"
+
+    monkeypatch.setattr("agent_core.agent_base.get_context", fake_get_context)
+
+    agent = QAAgent(AgentConfig(course_id=12, top_k=8, system_prompt="base"))
+    agent._llm = FakeLLM()
+
+    result = await agent.chat("什么是栈？", context={"db": object()})
+
+    assert result == "ok"
+    assert captured["course_id"] == 12
+    assert captured["query"] == "什么是栈？"
+    assert captured["top_k"] == 8
+    assert "命中上下文" in captured["messages"][0]["content"]
