@@ -10,6 +10,7 @@ from models.agent import (
     AgentTemplate,
     AgentWorkflow,
     build_agent_runtime_config_from_workflow,
+    infer_llm_provider_from_model,
     validate_workflow_dag,
 )
 from models.course import Course, Enrollment
@@ -106,6 +107,7 @@ def _apply_workflow_publication(agent: AgentInstance, workflow: AgentWorkflow) -
     )
     agent.config = config
     agent.tools = runtime_config["tools"]
+    agent.llm_provider = runtime_config["llm_provider"]
     agent.llm_model = runtime_config["llm_model"]
     agent.is_active = True
 
@@ -132,6 +134,16 @@ async def _get_agent_or_404(db: AsyncSession, agent_id: int) -> AgentInstance:
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     return agent
+
+
+async def _get_agent_by_course(db: AsyncSession, *, course_id: int) -> AgentInstance | None:
+    result = await db.execute(
+        select(AgentInstance)
+        .where(AgentInstance.course_id == course_id)
+        .order_by(AgentInstance.is_active.desc(), desc(AgentInstance.updated_at), desc(AgentInstance.id))
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 async def _get_workflow_or_404(db: AsyncSession, workflow_id: int) -> AgentWorkflow:
@@ -164,6 +176,14 @@ def _ensure_course_manager(*, course: Course, user: User) -> None:
     raise HTTPException(status_code=403, detail="Teacher or admin access required")
 
 
+def _normalize_agent_llm_payload(payload: dict) -> dict:
+    next_payload = dict(payload)
+    model = next_payload.get("llm_model")
+    if isinstance(model, str) and model.strip():
+        next_payload["llm_provider"] = infer_llm_provider_from_model(model)
+    return next_payload
+
+
 @router.get("/templates")
 async def list_templates(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     if user.role not in {UserRole.TEACHER, UserRole.ADMIN}:
@@ -184,7 +204,15 @@ async def create_agent(
     if data.template_id is not None:
         await _get_template_or_404(db, data.template_id)
 
-    agent = AgentInstance(**data.model_dump(), created_by=user.id)
+    existing_agent = await _get_agent_by_course(db, course_id=data.course_id)
+    if existing_agent is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Course {data.course_id} already has an Agent. Reuse and update agent_id={existing_agent.id} instead.",
+        )
+
+    payload = _normalize_agent_llm_payload(data.model_dump())
+    agent = AgentInstance(**payload, created_by=user.id)
     db.add(agent)
     await db.flush()
     await db.commit()
@@ -238,10 +266,17 @@ async def update_agent(
     _ensure_course_manager(course=current_course, user=user)
 
     payload = data.model_dump(exclude_unset=True)
+    payload = _normalize_agent_llm_payload(payload)
     new_course_id = payload.get("course_id")
     if new_course_id is not None and new_course_id != agent.course_id:
         new_course = await _get_course_or_404(db, new_course_id)
         _ensure_course_manager(course=new_course, user=user)
+        existing_agent = await _get_agent_by_course(db, course_id=new_course_id)
+        if existing_agent is not None and existing_agent.id != agent.id:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Course {new_course_id} already has an Agent. Reassigning this agent would create duplicates.",
+            )
 
     template_id = payload.get("template_id")
     if template_id is not None:

@@ -126,6 +126,7 @@ async def create_course(data: CourseCreate, db: AsyncSession = Depends(get_db), 
     course = Course(**data.model_dump(), teacher_id=user.id)
     db.add(course)
     await db.flush()
+    await db.commit()
     await db.refresh(course)
     return course
 
@@ -194,6 +195,7 @@ async def enroll_course(course_id: int, db: AsyncSession = Depends(get_db), user
     enrollment = Enrollment(student_id=user.id, course_id=course_id)
     db.add(enrollment)
     await db.flush()
+    await db.commit()
     return {"message": "enrolled"}
 
 
@@ -211,6 +213,7 @@ async def unenroll_course(course_id: int, db: AsyncSession = Depends(get_db), us
 
     await db.delete(enrollment)
     await db.flush()
+    await db.commit()
     return {"message": "unenrolled"}
 
 

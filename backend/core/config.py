@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "EduAI Platform"
     DEBUG: bool = True
     API_PREFIX: str = "/api/v1"
+    FRONTEND_BASE_URL: str = "http://localhost:5173"
     SECRET_KEY: str = "change-this-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24小时
 
