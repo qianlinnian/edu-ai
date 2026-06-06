@@ -11,9 +11,13 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_core.llm_provider import get_llm_provider
+from core.config import get_settings
+from models.agent import AgentInstance
 from models.course import Course, KnowledgeUnit
 from models.exercise import ExerciseAttempt, ExercisePool, ExerciseType, GeneratedExercise
 from models.learning import StudentKnowledgeMastery
+
+settings = get_settings()
 
 
 @dataclass
@@ -228,6 +232,15 @@ def _clamp_int(value: int, *, minimum: int, maximum: int) -> int:
     return min(max(int(value), minimum), maximum)
 
 
+def _default_model_for_provider(provider: str | None) -> str:
+    normalized = (provider or settings.DEFAULT_LLM_PROVIDER or "dashscope").strip().lower()
+    return {
+        "dashscope": settings.QWEN_MODEL,
+        "zhipu": settings.ZHIPU_MODEL,
+        "deepseek": settings.DEEPSEEK_MODEL,
+    }.get(normalized, settings.QWEN_MODEL)
+
+
 def _safe_json_loads(raw: str) -> Any:
     return extract_json_value(raw)
 
@@ -315,6 +328,34 @@ def _normalize_generated_item(
 
 async def _get_course_context(db: AsyncSession, *, course_id: int) -> Course | None:
     return (await db.execute(select(Course).where(Course.id == course_id))).scalar_one_or_none()
+
+
+async def _get_active_course_agent_llm_config(db: AsyncSession, *, course_id: int) -> dict[str, str | None]:
+    agent = (
+        await db.execute(
+            select(AgentInstance)
+            .where(
+                AgentInstance.course_id == course_id,
+                AgentInstance.is_active.is_(True),
+            )
+            .order_by(desc(AgentInstance.updated_at), desc(AgentInstance.id))
+        )
+    ).scalar_one_or_none()
+
+    provider = (
+        (agent.llm_provider or settings.DEFAULT_LLM_PROVIDER)
+        if agent is not None
+        else settings.DEFAULT_LLM_PROVIDER
+    )
+    provider = provider.strip().lower()
+    model = agent.llm_model.strip() if agent is not None and agent.llm_model and agent.llm_model.strip() else _default_model_for_provider(provider)
+    system_prompt = agent.system_prompt.strip() if agent is not None and agent.system_prompt else None
+    return {
+        "provider": provider,
+        "model": model,
+        "system_prompt": system_prompt,
+        "source": "course_agent" if agent is not None else "default",
+    }
 
 
 async def _get_knowledge_context(
@@ -446,8 +487,11 @@ async def _generate_exercises_with_llm(
         difficulty=difficulty,
         count=count,
     )
+    llm_config = await _get_active_course_agent_llm_config(db, course_id=course_id)
+    if llm_config["system_prompt"]:
+        messages[0]["content"] = f"{llm_config['system_prompt']}\n\n{messages[0]['content']}"
 
-    provider = get_llm_provider()
+    provider = get_llm_provider(llm_config["provider"], llm_config["model"])
     raw = await provider.chat(messages, temperature=0.3)
     parsed = _safe_json_loads(raw)
     items = parsed.get("exercises", parsed.get("items", [])) if isinstance(parsed, dict) else parsed

@@ -159,7 +159,7 @@ async def refresh_learning_alerts(
                 course_id=course_id,
                 alert_type="knowledge_weak",
                 severity=severity,
-                message=f"Knowledge unit '{ku.name}' is below threshold ({mastery.mastery_score:.2f})",
+                message=f"知识点 '{ku.name}' 掌握程度低于阈值 ({mastery.mastery_score:.2f})",
                 details={
                     "knowledge_unit_id": ku.id,
                     "knowledge_unit_name": ku.name,
