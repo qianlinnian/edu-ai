@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     description="可嵌入式跨课程AI Agent通用架构平台",
-    version="0.1.0",
+    version="0.4.0-dev",
     lifespan=lifespan,
 )
 
