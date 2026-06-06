@@ -105,6 +105,18 @@ const formatFileSize = (value?: number) => {
 
 const formatProcessingError = (error?: string | null) => {
   if (!error) return '-'
+  if (error.includes('Unsupported file type:')) {
+    return '文件类型不受支持。当前仅支持 txt、md、py、json、csv、pdf、docx、pptx、xlsx。'
+  }
+  if (error.includes('No readable text could be extracted from PDF')) {
+    return 'PDF 未提取到可读文本。可能是扫描版图片 PDF；请上传可复制文本的 PDF，或确认 OCR 配置可用。'
+  }
+  if (error.includes('No readable text could be extracted from')) {
+    return '文件中未提取到可读文本，请检查文件内容是否为空、是否仅包含图片，或重新导出后再上传。'
+  }
+  if (error.includes('No readable course content remained after chunking')) {
+    return '文件解析后没有可用于切片的课程内容，请检查文档正文是否为空或只有无效字符。'
+  }
   if (error.includes('batch size is invalid') && error.includes('should not be larger than 10')) {
     return '向量化失败：embedding 单批文本数量超过 10，请检查 EMBEDDING_BATCH_SIZE。'
   }
@@ -630,16 +642,6 @@ export default function CourseManage() {
           description="当前页面仅展示本课程资料。处理完成的资料可直接下载；处理中或失败的资料需要稍后刷新或联系教师处理。"
         />
 
-        {!!failedResources.length && (
-          <Alert
-            type="warning"
-            showIcon
-            style={{ marginBottom: 16 }}
-            message="部分资料暂不可下载"
-            description="学生端不提供重试入口。若资料持续处理失败，请联系教师删除后重新上传。"
-          />
-        )}
-
         {!!pendingResources.length && (
           <Alert
             type="info"
@@ -779,6 +781,17 @@ export default function CourseManage() {
                             >
                               下载
                             </Button>
+                            {isTeacher && (
+                              <Popconfirm
+                                title="确认删除这个资料吗？"
+                                okText="删除"
+                                cancelText="取消"
+                                okButtonProps={{ danger: true }}
+                                onConfirm={() => void deleteResource(row)}
+                              >
+                                <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                              </Popconfirm>
+                            )}
                           </Space>
                         ),
                       },

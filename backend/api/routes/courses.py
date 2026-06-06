@@ -21,7 +21,7 @@ from core.config import get_settings
 from models.exercise import ExerciseAttempt, ExercisePool, GeneratedExercise
 from models.learning import LearningAlert, StudentKnowledgeMastery
 from models.user import User, UserRole
-from workers.embedding_task import process_resource
+from workers.embedding_task import SUPPORTED_RESOURCE_TYPES, process_resource
 
 router = APIRouter()
 settings = get_settings()
@@ -496,6 +496,9 @@ async def upload_resource(
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     suffix = file.filename.split(".")[-1] if "." in file.filename else "unknown"
+    if suffix.lower() not in SUPPORTED_RESOURCE_TYPES:
+        supported = ", ".join(sorted(SUPPORTED_RESOURCE_TYPES))
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {suffix.lower()}. Supported types: {supported}")
     object_name = f"courses/{course_id}/{uuid4().hex}_{file.filename}"
 
     try:

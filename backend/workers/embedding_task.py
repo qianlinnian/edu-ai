@@ -24,6 +24,7 @@ from agent_core.llm_provider import get_llm_provider
 settings = get_settings()
 sync_engine = create_engine(settings.DATABASE_SYNC_URL)
 SyncSessionLocal = sessionmaker(bind=sync_engine)
+SUPPORTED_RESOURCE_TYPES = {"txt", "md", "py", "json", "csv", "pdf", "docx", "pptx", "xlsx"}
 
 
 def get_minio_client() -> Minio:
@@ -97,8 +98,33 @@ def split_text(content: str, chunk_size: int = 500, overlap: int = 100) -> list[
     return chunks
 
 
-def parse_resource_content(file_type: str, payload: bytes) -> str:
+def ensure_supported_resource_type(file_type: str) -> str:
     suffix = file_type.lower()
+    if suffix not in SUPPORTED_RESOURCE_TYPES:
+        supported = ", ".join(sorted(SUPPORTED_RESOURCE_TYPES))
+        raise ValueError(f"Unsupported file type: {suffix}. Supported types: {supported}")
+    return suffix
+
+
+def ensure_readable_content(content: str, *, file_type: str) -> str:
+    normalized = normalize_text(content)
+    if normalized:
+        return normalized
+
+    suffix = file_type.lower()
+    if suffix == "pdf":
+        if settings.DASHSCOPE_API_KEY:
+            raise ValueError("No readable text could be extracted from PDF after OCR. Please verify the document content.")
+        raise ValueError(
+            "No readable text could be extracted from PDF. The file may be image-only. "
+            "Upload a text-based PDF or configure DASHSCOPE_API_KEY for OCR."
+        )
+
+    raise ValueError(f"No readable text could be extracted from {suffix.upper()}.")
+
+
+def parse_resource_content(file_type: str, payload: bytes) -> str:
+    suffix = ensure_supported_resource_type(file_type)
     if suffix in {"txt", "md", "py", "json", "csv"}:
         return payload.decode("utf-8", errors="ignore")
 
@@ -269,8 +295,13 @@ def process_resource(resource_id: int):
                 response.close()
                 response.release_conn()
 
-            content = parse_resource_content(resource.file_type, payload)
+            content = ensure_readable_content(
+                parse_resource_content(resource.file_type, payload),
+                file_type=resource.file_type,
+            )
             chunks = split_text(content)
+            if not chunks:
+                raise ValueError("No readable course content remained after chunking.")
 
             chunk_embeddings = generate_chunk_embeddings(chunks)
 
