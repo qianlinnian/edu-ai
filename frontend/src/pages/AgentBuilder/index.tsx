@@ -611,8 +611,8 @@ export default function AgentBuilder() {
           <Alert
             type={validation.saveErrors.length === 0 && validation.publishErrors.length === 0 ? 'success' : 'warning'}
             showIcon
-            message="当前发布规则：仅支持将 input/rag/llm/output 线性工作流映射为 QA Agent 配置"
-            description="保存会校验 DAG 结构；发布还会检查是否包含仅 UI 原型节点。当前平台不会执行通用工作流引擎。"
+            message="当前是可视化 Agent 配置器：仅支持将 input/rag/llm/output 线性工作流映射为 QA Agent 配置"
+            description="保存会校验 DAG 结构；发布还会检查是否包含仅 UI 原型节点。当前平台不会执行通用工作流引擎，也不承诺通用 DAG 运行能力。"
           />
         </div>
 
