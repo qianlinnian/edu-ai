@@ -37,6 +37,8 @@ class AgentConfig:
     temperature: float = 0.7
     max_tokens: int = 2048
     tools: list[str] = field(default_factory=list)
+    top_k: int = 5
+    similarity_threshold: float | None = None
 
 
 def sanitize_history(history: list[dict] | None, *, max_messages: int = 12) -> list[dict[str, str]]:
@@ -202,7 +204,12 @@ class QAAgent(EduAgentBase):
         db = context["db"] if context and "db" in context else None
         retrieved_context = ""
         if db is not None and self.config.course_id:
-            retrieved_context = await get_context(db=db, course_id=self.config.course_id, query=query)
+            retrieved_context = await get_context(
+                db=db,
+                course_id=self.config.course_id,
+                query=query,
+                top_k=self.config.top_k,
+            )
 
         messages = [{"role": "system", "content": build_qa_system_prompt(self.config.system_prompt, retrieved_context)}]
         messages.extend(sanitize_history(history))

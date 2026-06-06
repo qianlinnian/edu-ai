@@ -48,6 +48,31 @@ SUPPORTED_WORKFLOW_NODE_TYPES = {
 }
 RUNTIME_WORKFLOW_NODE_TYPES = {name for name, meta in SUPPORTED_WORKFLOW_NODE_TYPES.items() if meta["runtime_supported"]}
 
+MODEL_PROVIDER_MAP = {
+    "qwen-max": "dashscope",
+    "qwen-vl-max": "dashscope",
+    "text-embedding-v3": "dashscope",
+    "glm-4": "zhipu",
+    "deepseek-chat": "deepseek",
+    "deepseek-reasoner": "deepseek",
+}
+
+MODEL_PROVIDER_PREFIX_MAP = {
+    "qwen": "dashscope",
+    "glm": "zhipu",
+    "deepseek": "deepseek",
+}
+
+
+def infer_llm_provider_from_model(model: str | None) -> str:
+    model_name = str(model or "").strip().lower()
+    if model_name in MODEL_PROVIDER_MAP:
+        return MODEL_PROVIDER_MAP[model_name]
+    for prefix, provider in MODEL_PROVIDER_PREFIX_MAP.items():
+        if model_name.startswith(prefix):
+            return provider
+    return "dashscope"
+
 
 def _normalize_nodes(workflow_dag: dict[str, Any] | None) -> list[dict[str, Any]]:
     raw_nodes = workflow_dag.get("nodes") if isinstance(workflow_dag, dict) else []
@@ -195,12 +220,6 @@ def validate_workflow_dag(
     rag_node_ids = [node_id for node_id, node_type in node_types.items() if node_type == "rag_node"]
     if len(rag_node_ids) > 1:
         publish_errors.append("Current runtime supports at most one rag_node")
-    if ui_only_node_ids:
-        publish_errors.append(
-            "Current runtime cannot publish workflows containing UI-only nodes: "
-            + ", ".join(sorted(node_types[node_id] for node_id in ui_only_node_ids))
-        )
-
     summary = {
         "node_count": len(nodes),
         "edge_count": len(edges),
@@ -212,7 +231,10 @@ def validate_workflow_dag(
     }
     warnings = []
     if ui_only_node_ids:
-        warnings.append("Some nodes are UI-only and can be saved but not published.")
+        warnings.append(
+            "Some nodes are UI-only capability switches. They can be published for frontend exposure, "
+            "but they are not executed by the QA runtime."
+        )
 
     return {
         "errors": errors,
@@ -252,6 +274,7 @@ def build_agent_runtime_config_from_workflow(
         "top_k": rag_node["data"].get("topK", 5) if rag_node else 5,
         "similarity_threshold": rag_node["data"].get("similarity", 0.7) if rag_node else 0.7,
         "llm_model": llm_node["data"].get("model", "qwen-max"),
+        "llm_provider": infer_llm_provider_from_model(llm_node["data"].get("model", "qwen-max")),
         "tools": ["rag"] if rag_node else [],
         "workflow_summary": validation["summary"],
         "workflow_mapping": {
