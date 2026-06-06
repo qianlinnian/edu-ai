@@ -9,9 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_core.agent_base import AgentConfig, QAAgent
 from core.database import get_db
+from core.permissions import ensure_course_access
 from core.security import get_current_user
 from models.agent import AgentInstance
 from models.chat import ChatMessage, ChatSession
+from models.course import Course
 from models.user import User
 
 router = APIRouter()
@@ -38,12 +40,30 @@ def _json_sse(payload: dict) -> str:
 
 
 def _agent_config(agent: AgentInstance, *, course_id: int) -> AgentConfig:
+    config = agent.config if isinstance(agent.config, dict) else {}
+    raw_top_k = config.get("top_k", 5)
+    try:
+        top_k = int(raw_top_k)
+    except (TypeError, ValueError):
+        top_k = 5
+    if top_k <= 0:
+        top_k = 5
+
+    raw_similarity = config.get("similarity_threshold")
+    try:
+        similarity_threshold = float(raw_similarity) if raw_similarity is not None else None
+    except (TypeError, ValueError):
+        similarity_threshold = None
+
     return AgentConfig(
         name=agent.name,
         course_id=course_id,
         system_prompt=agent.system_prompt,
         llm_provider=agent.llm_provider,
         llm_model=agent.llm_model,
+        tools=list(agent.tools or []),
+        top_k=top_k,
+        similarity_threshold=similarity_threshold,
     )
 
 
@@ -67,6 +87,14 @@ async def _resolve_agent(*, data: ChatRequest, db: AsyncSession) -> AgentInstanc
     if not agent.is_active:
         raise HTTPException(status_code=409, detail="Agent is not active")
     return agent
+
+
+async def _resolve_course(*, data: ChatRequest, db: AsyncSession) -> Course:
+    result = await db.execute(select(Course).where(Course.id == data.course_id))
+    course = result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return course
 
 
 async def _resolve_chat_session(
@@ -110,6 +138,8 @@ async def _prepare_chat(
     db: AsyncSession,
     user: User,
 ) -> tuple[AgentInstance, ChatSession, list[dict]]:
+    course = await _resolve_course(data=data, db=db)
+    await ensure_course_access(db, course=course, user=user)
     agent = await _resolve_agent(data=data, db=db)
     session = await _resolve_chat_session(data=data, db=db, user=user, agent=agent)
 
