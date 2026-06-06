@@ -59,11 +59,23 @@ class DashScopeProvider(BaseLLMProvider):
         )
         for response in responses:
             if response.status_code == 200:
-                content = response.output.choices[0].message.content
-                if content:
+                choice = response.output.choices[0] if response.output and response.output.choices else None
+                message = getattr(choice, "message", None)
+                content = getattr(message, "content", None)
+                if isinstance(content, str) and content:
                     yield content
+                elif isinstance(content, list):
+                    text_parts = [
+                        item.get("text", "").strip()
+                        for item in content
+                        if isinstance(item, dict) and item.get("text")
+                    ]
+                    merged = "".join(text_parts)
+                    if merged:
+                        yield merged
                 else:
-                    raise Exception(f"DashScope API error: function(chat_stream) - empty content in response")
+                    # DashScope streaming may emit keep-alive / reasoning / empty frames before text deltas.
+                    continue
             else:
                 raise Exception(f"DashScope API error: function(chat_stream), status_code: {response.status_code} - {response.message}")
 

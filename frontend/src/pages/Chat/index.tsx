@@ -396,7 +396,7 @@ export default function Chat() {
               type="warning"
               showIcon
               message="当前课程还没有可用答疑 Agent"
-              description="请先在 Agent Builder 中创建并发布 Agent，再回到此页面使用。"
+              description="请老师在Agent构建中创建并发布 Agent，再回到此页面使用。"
             />
           )}
         </div>
@@ -547,7 +547,7 @@ export default function Chat() {
               type="warning"
               showIcon
               style={{ marginBottom: 10 }}
-              message="当前课程没有可用答疑 Agent，请先在 Agent Builder 中创建并发布"
+              message="当前课程没有可用答疑 Agent，请课程老师先在 Agent Builder 中创建并发布"
               description="创建后回到此页面，选择对应课程即可使用 AI 问答功能。"
             />
           )}

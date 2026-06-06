@@ -20,6 +20,25 @@ class FakeStreamLLM:
         return []
 
 
+class FakeDashScopeResponse:
+    def __init__(self, *, status_code=200, content=None, message="ok"):
+        self.status_code = status_code
+        self.message = message
+        self.output = type(
+            "Output",
+            (),
+            {
+                "choices": [
+                    type(
+                        "Choice",
+                        (),
+                        {"message": type("Message", (), {"content": content})()},
+                    )()
+                ]
+            },
+        )()
+
+
 def test_qa_agent_chat_stream_uses_rag_context(monkeypatch):
     async def fake_get_context(*, db, course_id, query):
         return "Material: recursion requires a base case."
@@ -49,3 +68,33 @@ def test_qa_agent_chat_stream_uses_rag_context(monkeypatch):
         "Material: recursion requires a base case.",
     )
     assert fake_llm.messages[-1] == {"role": "user", "content": "What is recursion?"}
+
+
+def test_dashscope_stream_ignores_empty_frames(monkeypatch):
+    frames = [
+        FakeDashScopeResponse(content=""),
+        FakeDashScopeResponse(content=None),
+        FakeDashScopeResponse(content="part-1"),
+        FakeDashScopeResponse(content=[{"text": "part-2"}]),
+    ]
+
+    class FakeGeneration:
+        @staticmethod
+        def call(**kwargs):
+            return frames
+
+    monkeypatch.setattr("dashscope.Generation", FakeGeneration)
+
+    provider = __import__("agent_core.llm_provider", fromlist=["DashScopeProvider"]).DashScopeProvider(
+        model="qwen-max",
+        api_key="test-key",
+    )
+
+    async def run():
+        chunks = []
+        async for chunk in provider.chat_stream([{"role": "user", "content": "hello"}]):
+            chunks.append(chunk)
+        return chunks
+
+    chunks = asyncio.run(run())
+    assert chunks == ["part-1", "part-2"]
