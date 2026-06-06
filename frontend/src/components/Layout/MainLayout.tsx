@@ -18,7 +18,6 @@ import { useAuthStore } from '../../hooks/useAuthStore'
 const { Header, Sider, Content } = Layout
 
 const teacherMenuItems = [
-  { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: '/courses', icon: <BookOutlined />, label: '课程管理' },
   { key: '/chat', icon: <MessageOutlined />, label: '智能答疑' },
   { key: '/assignments', icon: <FileTextOutlined />, label: '作业管理' },

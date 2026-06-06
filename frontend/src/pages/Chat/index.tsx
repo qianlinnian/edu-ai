@@ -7,7 +7,7 @@ import {
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { agentAPI, chatAPI, courseAPI, fetchSSE, createAbortController } from '../../services/api'
+import { agentAPI, chatAPI, courseAPI, fetchSSE, createAbortController, getErrorMessage } from '../../services/api'
 import { useSessionStore, type PersistedMessage } from '../../hooks/useChatSession'
 
 // ===== 类型 =====
@@ -93,8 +93,8 @@ export default function Chat() {
           setSelectedCourse(data[0].id)
         }
       })
-      .catch((err: any) => {
-        message.error(err?.response?.data?.detail ?? '加载课程列表失败，请检查后端服务是否正常运行')
+      .catch((err: unknown) => {
+        message.error(getErrorMessage(err, '加载课程列表失败，请检查后端服务是否正常运行'))
       })
       .finally(() => setLoadingCourses(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -107,8 +107,8 @@ export default function Chat() {
     agentAPI
       .listInstances(selectedCourseItem.id)
       .then(({ data }) => setAgents(data))
-      .catch((err: any) => {
-        message.error(err?.response?.data?.detail ?? '加载 Agent 列表失败，请检查后端服务是否正常运行')
+      .catch((err: unknown) => {
+        message.error(getErrorMessage(err, '加载 Agent 列表失败，请检查后端服务是否正常运行'))
         setAgents([])
       })
       .finally(() => setLoadingAgents(false))
@@ -149,8 +149,8 @@ export default function Chat() {
           setActiveId(null)
         }
       })
-      .catch((err: any) => {
-        message.error(err?.response?.data?.detail ?? '加载会话列表失败，请检查后端服务是否正常运行')
+      .catch((err: unknown) => {
+        message.error(getErrorMessage(err, '加载会话列表失败，请检查后端服务是否正常运行'))
       })
   }, [selectedCourseItem?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -168,8 +168,8 @@ export default function Chat() {
           messages: data.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content })),
         })
       })
-      .catch((err: any) => {
-        message.error(err?.response?.data?.detail ?? '加载历史消息失败，请检查后端服务是否正常运行')
+      .catch((err: unknown) => {
+        message.error(getErrorMessage(err, '加载历史消息失败，请检查后端服务是否正常运行'))
         upsertSession({
           ...session,
           messages: [{ id: Date.now(), role: 'assistant', content: '加载历史消息失败，请刷新重试。' }],
@@ -206,8 +206,8 @@ export default function Chat() {
           await chatAPI.deleteSession(session.serverSessionId)
         }
         storeRemoveSession(localId)
-      } catch (err: any) {
-        message.error(err?.response?.data?.detail ?? '删除对话失败，请稍后重试')
+      } catch (err) {
+        message.error(getErrorMessage(err, '删除对话失败，请稍后重试'))
       }
     },
     [storeRemoveSession]

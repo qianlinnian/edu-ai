@@ -20,94 +20,23 @@ type MasteryItem = {
   label?: string
   name?: string
 }
+type ClassReport = {
+  course_id: number
+  overall_avg_mastery: number
+  knowledge_unit_count: number
+  by_knowledge_unit: {
+    knowledge_unit_id: number
+    name: string
+    avg_mastery: number
+    student_count: number
+    risk_count: number
+  }[]
+}
 
 const toPercent = (value?: number) => {
   const numeric = Number(value ?? 0)
   return Math.round(numeric <= 1 ? numeric * 100 : numeric)
 }
-
-const submitTrendOption = {
-  tooltip: { trigger: 'axis' },
-  grid: { top: 20, right: 20, bottom: 30, left: 40 },
-  xAxis: {
-    type: 'category',
-    data: ['3/20', '3/21', '3/22', '3/23', '3/24', '3/25', '3/26'],
-  },
-  yAxis: { type: 'value' },
-  series: [{
-    name: '提交数', type: 'line', smooth: true,
-    data: [12, 8, 25, 18, 30, 22, 28],
-    itemStyle: { color: '#00a8ff' },
-    areaStyle: {
-      color: {
-        type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-        colorStops: [
-          { offset: 0, color: 'rgba(0,168,255,0.3)' },
-          { offset: 1, color: 'rgba(0,168,255,0.02)' },
-        ],
-      },
-    },
-  }],
-}
-
-const masteryBarOption = {
-  tooltip: { trigger: 'axis' },
-  grid: { top: 20, right: 20, bottom: 55, left: 50 },
-  xAxis: {
-    type: 'category',
-    data: ['Python基础', '循环结构', '函数', '递归', '列表操作', '面向对象'],
-    axisLabel: { rotate: 15, fontSize: 11 },
-  },
-  yAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
-  series: [{
-    name: '掌握度', type: 'bar',
-    data: [92, 61, 85, 45, 78, 66],
-    itemStyle: {
-      borderRadius: [6, 6, 0, 0],
-      color: (params: any) => {
-        if (params.value >= 80) return '#52c41a'
-        if (params.value >= 60) return '#faad14'
-        return '#ff4d4f'
-      },
-    },
-  }],
-}
-
-const studentRadarOption = {
-  tooltip: {},
-  radar: {
-    indicator: [
-      { name: 'Python基础', max: 100 },
-      { name: '循环结构', max: 100 },
-      { name: '函数', max: 100 },
-      { name: '递归', max: 100 },
-      { name: '列表操作', max: 100 },
-    ],
-    radius: 90,
-    axisName: { color: '#555', fontSize: 12 },
-  },
-  series: [{
-    type: 'radar',
-    data: [{
-      value: [92, 63, 85, 42, 78],
-      name: '我的掌握度',
-      itemStyle: { color: '#00a8ff' },
-      areaStyle: { color: 'rgba(0,168,255,0.15)' },
-    }],
-  }],
-}
-
-const recentAlerts = [
-  { name: '张三', issue: '循环结构掌握度 30%，连续3次作业不及格', level: 'error' as const },
-  { name: '王五', issue: '近2周未提交作业，递归知识薄弱', level: 'error' as const },
-  { name: '李四', issue: '函数定义掌握度 45%，成绩下降趋势', level: 'warning' as const },
-]
-
-const recentAssignments = [
-  { name: 'Python循环练习', course: 'Python程序设计', submitted: 12, total: 30, ddl: '04-10' },
-  { name: '递归作业', course: 'Python程序设计', submitted: 5, total: 30, ddl: '04-15' },
-  { name: '链表实现', course: '数据结构', submitted: 20, total: 25, ddl: '04-12' },
-]
 
 
 
@@ -132,6 +61,17 @@ const buildStudentRadarOption = (items: { label: string; value: number }[]) => (
 export default function Dashboard() {
   const user = useAuthStore(s => s.user)
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin'
+
+  // 教师端数据
+  const [teacherCourses, setTeacherCourses] = useState<Course[]>([])
+  const [teacherSelectedCourseId, setTeacherSelectedCourseId] = useState<number | undefined>()
+  const [classReport, setClassReport] = useState<ClassReport | null>(null)
+  const [classAlerts, setClassAlerts] = useState<{ id?: number; severity?: 'high' | 'medium' | 'low'; message?: string; student_id?: number; details?: { knowledge_unit_name?: string } }[]>([])
+  const [classStudentCount, setClassStudentCount] = useState(0)
+  const [classPendingSubmissions, setClassPendingSubmissions] = useState(0)
+  const [teacherLoading, setTeacherLoading] = useState(false)
+
+  // 学生端数据
   const [courses, setCourses] = useState<Course[]>([])
   const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>()
   const [mastery, setMastery] = useState<{ label: string; value: number }[]>([])
@@ -139,10 +79,68 @@ export default function Dashboard() {
   const [studentTodosReal, setStudentTodosReal] = useState<StudentTodo[]>([])
   const [studentLoading, setStudentLoading] = useState(false)
 
-  const studentRadarOption = useMemo(
-    () => buildStudentRadarOption(mastery.length ? mastery : [{ label: '暂无数据', value: 0 }]),
-    [mastery],
-  )
+  const buildClassBarOption = (items: ClassReport['by_knowledge_unit']) => ({
+    tooltip: { trigger: 'axis' },
+    grid: { top: 20, right: 20, bottom: 55, left: 50 },
+    xAxis: { type: 'category', data: items.map(i => i.name), axisLabel: { rotate: 15, fontSize: 11 } },
+    yAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
+    series: [{
+      name: '平均掌握度', type: 'bar',
+      data: items.map(i => toPercent(i.avg_mastery)),
+      itemStyle: {
+        borderRadius: [6, 6, 0, 0],
+        color: (params: any) => {
+          if (params.value >= 80) return '#52c41a'
+          if (params.value >= 60) return '#faad14'
+          return '#ff4d4f'
+        },
+      },
+    }],
+  })
+
+  const buildSubmitTrendOption = (items: { date: string; count: number }[]) => ({
+    tooltip: { trigger: 'axis' },
+    grid: { top: 20, right: 20, bottom: 30, left: 40 },
+    xAxis: { type: 'category', data: items.map(i => i.date) },
+    yAxis: { type: 'value' },
+    series: [{
+      name: '提交数', type: 'line', smooth: true,
+      data: items.map(i => i.count),
+      itemStyle: { color: '#00a8ff' },
+      areaStyle: {
+        color: {
+          type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+          colorStops: [
+            { offset: 0, color: 'rgba(0,168,255,0.3)' },
+            { offset: 1, color: 'rgba(0,168,255,0.02)' },
+          ],
+        },
+      },
+    }],
+  })
+
+  const loadTeacherDashboard = async (courseId?: number) => {
+    const activeCourseId = courseId || teacherSelectedCourseId
+    if (!activeCourseId) return
+    setTeacherLoading(true)
+    try {
+      const [reportRes, alertsRes, studentsRes] = await Promise.all([
+        analyticsAPI.getClassReport(activeCourseId).catch(() => ({ data: null })),
+        analyticsAPI.getAlerts(activeCourseId).catch(() => ({ data: [] })),
+        courseAPI.listStudents(activeCourseId).catch(() => ({ data: [] })),
+      ])
+      setClassReport(reportRes.data)
+      setClassAlerts(alertsRes.data || [])
+      setClassStudentCount(Array.isArray(studentsRes.data) ? studentsRes.data.length : 0)
+      // 待批改数从 classReport 估算（通过风险学生数近似）
+      const riskCount = reportRes.data?.by_knowledge_unit?.reduce((s: number, i: any) => s + (i.risk_count || 0), 0) ?? 0
+      setClassPendingSubmissions(riskCount)
+    } catch {
+      // non-fatal
+    } finally {
+      setTeacherLoading(false)
+    }
+  }
 
   const loadStudentDashboard = async (courseId?: number, courseList?: Course[]) => {
     if (!user) return
@@ -175,6 +173,26 @@ export default function Dashboard() {
     }
   }
 
+  const studentRadarOption = useMemo(
+    () => buildStudentRadarOption(mastery.length ? mastery : [{ label: '暂无数据', value: 0 }]),
+    [mastery],
+  )
+
+  useEffect(() => {
+    if (!isTeacher) return
+    const bootstrap = async () => {
+      try {
+        const { data } = await courseAPI.list()
+        setTeacherCourses(data || [])
+        if (data?.[0]?.id) {
+          setTeacherSelectedCourseId(data[0].id)
+          await loadTeacherDashboard(data[0].id)
+        }
+      } catch { /* non-fatal */ }
+    }
+    void bootstrap()
+  }, [isTeacher])
+
   useEffect(() => {
     if (isTeacher) return
     const bootstrap = async () => {
@@ -190,42 +208,55 @@ export default function Dashboard() {
   }, [isTeacher])
 
   if (isTeacher) {
+    const average = toPercent(classReport?.overall_avg_mastery)
+    const riskTotal = classReport?.by_knowledge_unit?.reduce((s, i) => s + (i.risk_count || 0), 0) ?? 0
+    const barOption = classReport?.by_knowledge_unit?.length
+      ? buildClassBarOption(classReport.by_knowledge_unit)
+      : { tooltip: {}, xAxis: {}, yAxis: {}, series: [] }
     return (
       <div>
-        <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a' }}>
             👋 你好，{user?.full_name}！
           </span>
-          <span style={{ fontSize: 14, color: '#999', marginLeft: 12 }}>
-            今天共有 15 份作业待批改
+          <Select
+            style={{ width: 240 }}
+            placeholder="选择课程查看学情"
+            options={teacherCourses.map(c => ({ value: c.id, label: `${c.name}（${c.code || ''}）` }))}
+            value={teacherSelectedCourseId}
+            onChange={(id) => { setTeacherSelectedCourseId(id); void loadTeacherDashboard(id) }}
+          />
+          <span style={{ fontSize: 14, color: '#999' }}>
+            {classReport ? `班级平均掌握度 ${average}%` : '已接入真实学情数据'}
           </span>
         </div>
 
         <Row gutter={[16, 16]}>
           <Col xs={24} sm={12} lg={6}>
             <Card bordered={false} style={{ borderRadius: 12, background: 'linear-gradient(135deg,#e6f7ff,#bae7ff)' }}>
-              <Statistic title="管理课程" value={3}
+              <Statistic title="管理课程" value={teacherCourses.length || classReport ? 1 : 0}
                 prefix={<BookOutlined style={{ color: '#00a8ff' }} />}
                 valueStyle={{ color: '#00a8ff', fontWeight: 700 }} />
             </Card>
           </Col>
           <Col xs={24} sm={12} lg={6}>
             <Card bordered={false} style={{ borderRadius: 12, background: 'linear-gradient(135deg,#f6ffed,#d9f7be)' }}>
-              <Statistic title="在籍学生" value={128}
+              <Statistic title="在籍学生" value={classStudentCount}
                 prefix={<TeamOutlined style={{ color: '#52c41a' }} />}
                 valueStyle={{ color: '#52c41a', fontWeight: 700 }} />
             </Card>
           </Col>
           <Col xs={24} sm={12} lg={6}>
             <Card bordered={false} style={{ borderRadius: 12, background: 'linear-gradient(135deg,#fffbe6,#fff1b8)' }}>
-              <Statistic title="待批改作业" value={15}
+              <Statistic title="班级平均掌握度" value={average}
+                suffix="%"
                 prefix={<FileTextOutlined style={{ color: '#faad14' }} />}
                 valueStyle={{ color: '#faad14', fontWeight: 700 }} />
             </Card>
           </Col>
           <Col xs={24} sm={12} lg={6}>
             <Card bordered={false} style={{ borderRadius: 12, background: 'linear-gradient(135deg,#fff1f0,#ffccc7)' }}>
-              <Statistic title="学情预警" value={5}
+              <Statistic title="学情预警" value={classAlerts.length}
                 prefix={<AlertOutlined style={{ color: '#ff4d4f' }} />}
                 valueStyle={{ color: '#ff4d4f', fontWeight: 700 }} />
             </Card>
@@ -233,55 +264,35 @@ export default function Dashboard() {
         </Row>
 
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-          <Col xs={24} lg={14}>
-            <Card title="近7天作业提交趋势" bordered={false} style={{ borderRadius: 12 }}>
-              <ReactECharts option={submitTrendOption} style={{ height: 220 }} />
-            </Card>
-          </Col>
           <Col xs={24} lg={10}>
-            <Card title="班级知识掌握度" bordered={false} style={{ borderRadius: 12 }}>
-              <ReactECharts option={masteryBarOption} style={{ height: 220 }} />
+            <Card title="班级知识点平均掌握度" bordered={false} style={{ borderRadius: 12 }} loading={teacherLoading}>
+              {classReport?.by_knowledge_unit?.length ? (
+                <ReactECharts option={barOption} style={{ height: 220 }} />
+              ) : (
+                <Empty description="暂无班级学情数据" />
+              )}
             </Card>
           </Col>
-        </Row>
-
-        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-          <Col xs={24} lg={12}>
-            <Card title="⚠️ 学情预警" bordered={false} style={{ borderRadius: 12 }}>
-              <List
-                dataSource={recentAlerts}
-                renderItem={item => (
-                  <List.Item style={{ padding: '6px 0' }}>
-                    <Alert
-                      type={item.level}
-                      message={<span><strong>{item.name}</strong> — {item.issue}</span>}
-                      style={{ width: '100%', borderRadius: 8 }}
-                      showIcon
-                    />
-                  </List.Item>
-                )}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Card title="📋 近期作业进度" bordered={false} style={{ borderRadius: 12 }}>
-              <List
-                dataSource={recentAssignments}
-                renderItem={item => (
-                  <List.Item style={{ flexDirection: 'column', alignItems: 'stretch', padding: '8px 0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontWeight: 500 }}>{item.name}</span>
-                      <Tag color="blue">截止 {item.ddl}</Tag>
-                    </div>
-                    <Progress
-                      percent={Math.round(item.submitted / item.total * 100)}
-                      format={() => `${item.submitted}/${item.total}`}
-                      strokeColor="#00a8ff"
-                      size="small"
-                    />
-                  </List.Item>
-                )}
-              />
+          <Col xs={24} lg={14}>
+            <Card title="⚠️ 学情预警" bordered={false} style={{ borderRadius: 12 }} loading={teacherLoading}>
+              {classAlerts.length === 0 ? (
+                <Empty description="暂无预警信息" />
+              ) : (
+                <List
+                  dataSource={classAlerts}
+                  renderItem={item => (
+                    <List.Item style={{ padding: '6px 0' }}>
+                      <Alert
+                        type={item.severity === 'high' ? 'error' : item.severity === 'medium' ? 'warning' : 'info'}
+                        message={`学生 ${item.student_id ?? ''} — ${item.details?.knowledge_unit_name || '知识点预警'}`}
+                        description={item.message || '暂无详细说明'}
+                        style={{ width: '100%', borderRadius: 8 }}
+                        showIcon
+                      />
+                    </List.Item>
+                  )}
+                />
+              )}
             </Card>
           </Col>
         </Row>

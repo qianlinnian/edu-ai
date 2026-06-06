@@ -31,6 +31,7 @@ class FakeDB:
         self.added = []
         self.execute_calls = []
         self.flushed = False
+        self.committed = False
         self.refreshed = []
         self.committed = False
 
@@ -48,6 +49,9 @@ class FakeDB:
         for index, obj in enumerate(self.added, start=1):
             if getattr(obj, "id", None) is None:
                 obj.id = index
+
+    async def commit(self):
+        self.committed = True
 
     async def refresh(self, obj):
         self.refreshed.append(obj)

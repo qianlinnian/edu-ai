@@ -139,8 +139,14 @@ class EduAgentBase(ABC):
 
     def __init__(self, config: AgentConfig):
         self.config = config
-        self.llm: BaseLLMProvider = get_llm_provider(config.llm_provider, config.llm_model)
+        self._llm: BaseLLMProvider | None = None
         self._tools: dict[str, dict[str, Any]] = {}
+
+    @property
+    def llm(self) -> BaseLLMProvider:
+        if self._llm is None:
+            self._llm = get_llm_provider(self.config.llm_provider, self.config.llm_model)
+        return self._llm
 
     def register_tool(self, name: str, func, description: str = "") -> None:
         self._tools[name] = {"func": func, "description": description}

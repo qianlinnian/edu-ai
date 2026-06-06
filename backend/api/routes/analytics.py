@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
-from core.permissions import ensure_course_manager, ensure_student_or_teacher_access
+from core.permissions import ensure_course_access, ensure_course_manager, ensure_student_or_teacher_access
 from core.security import get_current_user
 from education.analytics_engine import class_report, refresh_learning_alerts, student_mastery_overview, weak_points
 from models.course import Course
@@ -29,7 +29,7 @@ async def get_student_mastery(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    ensure_student_or_teacher_access(course=course, student_id=student_id, user=user)
+    await ensure_student_or_teacher_access(db, course=course, student_id=student_id, user=user)
     return await student_mastery_overview(db, student_id=student_id, course_id=course_id)
 
 
@@ -42,7 +42,7 @@ async def get_weak_points(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    ensure_student_or_teacher_access(course=course, student_id=student_id, user=user)
+    await ensure_student_or_teacher_access(db, course=course, student_id=student_id, user=user)
     return await weak_points(db, student_id=student_id, course_id=course_id, threshold=threshold)
 
 
@@ -79,6 +79,9 @@ async def get_alerts(
 ):
     if user.role == UserRole.STUDENT:
         student_id = user.id
+        if course_id is not None:
+            course = await _get_course_or_404(db, course_id)
+            await ensure_course_access(db, course=course, user=user)
     elif user.role == UserRole.TEACHER:
         if course_id is None:
             raise HTTPException(status_code=400, detail="course_id is required for teacher alert queries")
