@@ -5,13 +5,14 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import create_engine, delete, select
+from sqlalchemy import create_engine, delete, desc, select
 from sqlalchemy.orm import sessionmaker
 
 from agent_core.agent_base import AgentConfig, GradingAgent
 from core.config import get_settings
 from core.normalization import extract_json_object, normalize_bounded_score, normalize_string_list
 from education.exercise_engine import DEFAULT_INITIAL_MASTERY, apply_mastery_update
+from models.agent import AgentInstance
 from models.assignment import Assignment, GradingResult, Submission, SubmissionAnnotation, SubmissionStatus
 from models.course import KnowledgeUnit
 from models.learning import LearningAlert, StudentKnowledgeMastery
@@ -122,6 +123,50 @@ def _format_assignment_context(assignment: Assignment) -> str:
         f"Rubric: {rubric_text}\n"
         f"Reference answer: {reference_answer}"
     )
+
+
+def _default_model_for_provider(provider: str | None) -> str:
+    normalized = (provider or settings.DEFAULT_LLM_PROVIDER or "dashscope").strip().lower()
+    return {
+        "dashscope": settings.QWEN_MODEL,
+        "zhipu": settings.ZHIPU_MODEL,
+        "deepseek": settings.DEEPSEEK_MODEL,
+    }.get(normalized, settings.QWEN_MODEL)
+
+
+def _resolve_course_llm_config(db, *, course_id: int | None) -> dict[str, str | None]:
+    if course_id is None:
+        provider = settings.DEFAULT_LLM_PROVIDER
+        return {
+            "provider": provider,
+            "model": _default_model_for_provider(provider),
+            "system_prompt": None,
+            "source": "default",
+        }
+
+    agent = db.execute(
+        select(AgentInstance)
+        .where(
+            AgentInstance.course_id == course_id,
+            AgentInstance.is_active.is_(True),
+        )
+        .order_by(desc(AgentInstance.updated_at), desc(AgentInstance.id))
+    ).scalar_one_or_none()
+
+    provider = (
+        (agent.llm_provider or settings.DEFAULT_LLM_PROVIDER)
+        if agent is not None
+        else settings.DEFAULT_LLM_PROVIDER
+    )
+    provider = provider.strip().lower()
+    model = agent.llm_model.strip() if agent is not None and agent.llm_model and agent.llm_model.strip() else _default_model_for_provider(provider)
+    system_prompt = agent.system_prompt.strip() if agent is not None and agent.system_prompt else None
+    return {
+        "provider": provider,
+        "model": model,
+        "system_prompt": system_prompt,
+        "source": "course_agent" if agent is not None else "default",
+    }
 
 def _fallback_knowledge_scores(knowledge_point_ids: list[int], score: float, max_score: float) -> dict[str, float]:
     if not knowledge_point_ids:
@@ -245,22 +290,34 @@ def _standardize_grading_payload(
         "source": source,
     }
 
-async def _grade_with_llm(*, assignment: Assignment, submission: Submission) -> dict[str, Any]:
+async def _grade_with_llm(*, assignment: Assignment, submission: Submission, db=None) -> dict[str, Any]:
     content, warning_text = _build_grading_content(submission)
     file_note = f"Student submitted attachment: {submission.file_path}" if submission.file_path else "Student did not submit an attachment."
     if warning_text:
         file_note += f"\nAttachment processing warning: {warning_text}"
+
+    grading_prompt = (
+        "You are EduAI's assignment grading agent. Grade according to the assignment, rubric, "
+        "reference answer, related knowledge points, and student submission. Return only JSON."
+    )
+    owns_session = db is None
+    if owns_session:
+        db = SyncSessionLocal()
+    llm_config = _resolve_course_llm_config(db, course_id=assignment.course_id)
+    if owns_session:
+        db.close()
 
     agent = GradingAgent(
         AgentConfig(
             name="AssignmentGradingAgent",
             course_id=assignment.course_id,
             system_prompt=(
-                "You are EduAI's assignment grading agent. Grade according to the assignment, rubric, "
-                "reference answer, related knowledge points, and student submission. Return only JSON."
+                f"{llm_config['system_prompt']}\n\n{grading_prompt}"
+                if llm_config["system_prompt"]
+                else grading_prompt
             ),
-            llm_provider=settings.DEFAULT_LLM_PROVIDER,
-            llm_model=settings.QWEN_MODEL,
+            llm_provider=llm_config["provider"],
+            llm_model=llm_config["model"],
             temperature=0.2,
         )
     )
@@ -308,9 +365,9 @@ def _fallback_grading(*, assignment: Assignment, submission: Submission, error: 
         data["overall_comment"] += f" LLM grading unavailable; rule fallback used: {error[:180]}"
     return _standardize_grading_payload(data, assignment=assignment, submission=submission, source="fallback")
 
-def _grade_submission_content(*, assignment: Assignment, submission: Submission) -> dict[str, Any]:
+def _grade_submission_content(*, assignment: Assignment, submission: Submission, db=None) -> dict[str, Any]:
     try:
-        return asyncio.run(_grade_with_llm(assignment=assignment, submission=submission))
+        return asyncio.run(_grade_with_llm(assignment=assignment, submission=submission, db=db))
     except Exception as exc:
         return _fallback_grading(assignment=assignment, submission=submission, error=str(exc))
 
@@ -473,7 +530,7 @@ def grade_submission(submission_id: int):
             submission.status = SubmissionStatus.GRADING
             db.flush()
 
-            grading_payload = _grade_submission_content(assignment=assignment, submission=submission)
+            grading_payload = _grade_submission_content(assignment=assignment, submission=submission, db=db)
 
             if existing:
                 existing.score = grading_payload["score"]
