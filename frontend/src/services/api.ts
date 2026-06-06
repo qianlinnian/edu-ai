@@ -270,7 +270,8 @@ export const analyticsAPI = {
   getWeakPoints: (studentId: number, courseId: number) =>
     api.get(`/analytics/student/${studentId}/weak-points`, { params: { course_id: courseId } }),
   getClassReport: (courseId: number) => api.get(`/analytics/course/${courseId}/class-report`),
-  getAlerts: (courseId?: number) => api.get('/analytics/alerts', { params: { course_id: courseId } }),
+  getAlerts: (courseId?: number, studentId?: number) =>
+    api.get('/analytics/alerts', { params: { course_id: courseId, student_id: studentId } }),
 }
 
 export const exerciseAPI = {

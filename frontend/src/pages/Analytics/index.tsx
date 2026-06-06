@@ -117,7 +117,7 @@ export default function Analytics() {
     const [masteryRes, weakRes, alertsRes] = await Promise.all([
       analyticsAPI.getStudentMastery(studentId, courseId),
       analyticsAPI.getWeakPoints(studentId, courseId),
-      analyticsAPI.getAlerts(courseId),
+      analyticsAPI.getAlerts(courseId, studentId),
     ])
     setMastery(mapMastery(masteryRes.data || []))
     setWeakPoints(weakRes.data || [])
@@ -218,7 +218,7 @@ export default function Analytics() {
               value={selectedStudentId}
               onChange={(value) => {
                 setSelectedStudentId(value)
-                if (selectedCourseId && value) void loadData(selectedCourseId, value)
+                if (selectedCourseId) void loadData(selectedCourseId, value)
               }}
             />
           </Space>

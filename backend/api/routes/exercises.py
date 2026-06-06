@@ -4,10 +4,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from core.permissions import ensure_course_access
 from core.security import get_current_user
 from education.analytics_engine import refresh_learning_alerts
 from education.exercise_engine import create_attempt_and_update_mastery, generate_targeted_exercises
-from models.course import Course, Enrollment
+from models.course import Course
 from models.exercise import ExercisePool, ExerciseType, GeneratedExercise
 from models.user import User, UserRole
 
@@ -43,16 +44,7 @@ async def generate_exercises(
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    enrollment = (
-        await db.execute(
-            select(Enrollment).where(
-                Enrollment.course_id == data.course_id,
-                Enrollment.student_id == user.id,
-            )
-        )
-    ).scalar_one_or_none()
-    if not enrollment:
-        raise HTTPException(status_code=403, detail="Not enrolled in this course")
+    await ensure_course_access(db, course=course, user=user)
 
     result = await generate_targeted_exercises(
         db,
@@ -124,8 +116,18 @@ async def submit_attempt(
 
 
 @router.get("/pool")
-async def list_exercise_pool(course_id: int, db: AsyncSession = Depends(get_db)):
+async def list_exercise_pool(
+    course_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """List course exercise pool."""
+    course = (await db.execute(select(Course).where(Course.id == course_id))).scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    await ensure_course_access(db, course=course, user=user)
+
     result = await db.execute(
         select(ExercisePool).where(ExercisePool.course_id == course_id).order_by(ExercisePool.created_at.desc())
     )
