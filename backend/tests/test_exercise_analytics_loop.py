@@ -7,8 +7,9 @@ import pytest
 from api.routes import exercises
 from education import analytics_engine, exercise_engine
 from models.course import KnowledgeUnit
-from models.exercise import ExercisePool, ExerciseType
+from models.exercise import ExercisePool, ExerciseType, GeneratedExercise
 from models.learning import LearningAlert, StudentKnowledgeMastery
+from models.user import UserRole
 
 
 class FakeResult:
@@ -50,8 +51,8 @@ class FakeDB:
         self.refreshed.append(obj)
 
 
-def make_user(user_id: int = 11):
-    return SimpleNamespace(id=user_id)
+def make_user(user_id: int = 11, role: UserRole = UserRole.STUDENT):
+    return SimpleNamespace(id=user_id, role=role)
 
 
 def make_pool_exercise(*, kp_ids=None):
@@ -67,6 +68,22 @@ def make_pool_exercise(*, kp_ids=None):
         is_generated=False,
     )
     item.id = 99
+    return item
+
+
+def make_generated_exercise(*, kp_ids=None):
+    item = GeneratedExercise(
+        student_id=11,
+        course_id=3,
+        exercise_type=ExerciseType.CHOICE,
+        question="Generated question",
+        options=[{"key": "A", "label": "Right"}, {"key": "B", "label": "Wrong"}],
+        answer="A",
+        explanation="Because A is correct.",
+        target_knowledge_points=kp_ids or [101, 999],
+        difficulty=2,
+    )
+    item.id = 199
     return item
 
 
@@ -103,6 +120,7 @@ async def test_create_attempt_updates_mastery_after_successful_answer():
     db = FakeDB(
         results=[
             FakeResult(scalar=exercise),
+            FakeResult(scalars=[101]),
             FakeResult(scalar=None),
         ]
     )
@@ -205,7 +223,14 @@ async def test_submit_attempt_returns_alert_refresh_metadata(monkeypatch):
         feedback="retry",
     )
     exercise = make_pool_exercise()
-    db = FakeDB(results=[FakeResult(scalar=exercise)])
+    db = FakeDB(
+        results=[
+            FakeResult(scalar=exercise),
+            FakeResult(scalar=SimpleNamespace(id=3, teacher_id=7)),
+            FakeResult(scalar=123),
+            FakeResult(scalar=exercise),
+        ]
+    )
 
     monkeypatch.setattr(exercises, "create_attempt_and_update_mastery", AsyncMock(return_value=attempt))
     monkeypatch.setattr(exercises, "refresh_learning_alerts", AsyncMock(return_value=2))
@@ -219,3 +244,29 @@ async def test_submit_attempt_returns_alert_refresh_metadata(monkeypatch):
     assert result["mastery_updated"] is True
     assert result["alerts_refreshed"] == 2
     assert result["course_id"] == 3
+
+
+@pytest.mark.asyncio
+async def test_generated_attempt_skips_missing_knowledge_points():
+    exercise = make_generated_exercise()
+    db = FakeDB(
+        results=[
+            FakeResult(scalar=exercise),
+            FakeResult(scalars=[101]),
+            FakeResult(scalar=None),
+        ]
+    )
+
+    attempt = await exercise_engine.create_attempt_and_update_mastery(
+        db,
+        student_id=11,
+        exercise_id=None,
+        generated_exercise_id=exercise.id,
+        student_answer="A",
+    )
+
+    mastery_rows = [item for item in db.added if isinstance(item, StudentKnowledgeMastery)]
+
+    assert attempt.is_correct is True
+    assert len(mastery_rows) == 1
+    assert mastery_rows[0].knowledge_unit_id == 101

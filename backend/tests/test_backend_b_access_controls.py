@@ -59,6 +59,14 @@ def make_course(*, course_id: int = 1, teacher_id: int = 7):
     return SimpleNamespace(id=course_id, teacher_id=teacher_id)
 
 
+def make_pool_exercise(*, exercise_id: int = 5, course_id: int = 1):
+    return SimpleNamespace(id=exercise_id, course_id=course_id)
+
+
+def make_generated_exercise(*, exercise_id: int = 9, course_id: int = 1, student_id: int = 42):
+    return SimpleNamespace(id=exercise_id, course_id=course_id, student_id=student_id)
+
+
 def make_alert(*, alert_id: int, student_id: int, course_id: int):
     return SimpleNamespace(
         id=alert_id,
@@ -126,6 +134,44 @@ def test_exercise_pool_returns_pool_for_enrolled_student():
 
     assert response.status_code == 200
     assert response.json()[0]["id"] == 5
+
+
+def test_exercise_attempt_rejects_teacher():
+    client = TestClient(make_app(db=FakeDB(), user=make_user(user_id=7, role=UserRole.TEACHER)))
+
+    response = client.post("/api/v1/exercises/attempt", json={"exercise_id": 5, "student_answer": "A"})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Only students can submit exercise attempts"
+
+
+def test_exercise_attempt_rejects_unenrolled_student():
+    db = FakeDB(
+        results=[
+            FakeResult(scalar=make_pool_exercise(exercise_id=5, course_id=1)),
+            FakeResult(scalar=make_course(course_id=1, teacher_id=7)),
+            FakeResult(scalar=None),
+        ]
+    )
+    client = TestClient(make_app(db=db, user=make_user(user_id=42, role=UserRole.STUDENT)))
+
+    response = client.post("/api/v1/exercises/attempt", json={"exercise_id": 5, "student_answer": "A"})
+
+    assert response.status_code == 403
+
+
+def test_exercise_attempt_rejects_foreign_generated_exercise():
+    db = FakeDB(
+        results=[
+            FakeResult(scalar=make_generated_exercise(exercise_id=9, course_id=1, student_id=999)),
+        ]
+    )
+    client = TestClient(make_app(db=db, user=make_user(user_id=42, role=UserRole.STUDENT)))
+
+    response = client.post("/api/v1/exercises/attempt", json={"generated_exercise_id": 9, "student_answer": "A"})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Not allowed to submit attempts for another student's exercise"
 
 
 def test_alerts_teacher_requires_course_id():

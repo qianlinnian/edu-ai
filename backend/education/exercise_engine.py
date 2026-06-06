@@ -38,6 +38,19 @@ def _normalize_text(value: str | None) -> str:
     return " ".join(value.strip().lower().split())
 
 
+async def _filter_existing_knowledge_point_ids(
+    db: AsyncSession,
+    *,
+    knowledge_point_ids: list[int],
+) -> list[int]:
+    if not knowledge_point_ids:
+        return []
+
+    existing = await db.execute(select(KnowledgeUnit.id).where(KnowledgeUnit.id.in_(knowledge_point_ids)))
+    existing_ids = {int(item) for item in existing.scalars().all()}
+    return [kp_id for kp_id in knowledge_point_ids if kp_id in existing_ids]
+
+
 def _judge_answer(exercise_type: ExerciseType, expected: str, actual: str) -> tuple[bool, float]:
     expected_norm = _normalize_text(expected)
     actual_norm = _normalize_text(actual)
@@ -148,13 +161,17 @@ async def _update_mastery(
     is_correct: bool,
     score: float,
 ) -> None:
-    if not knowledge_point_ids:
+    valid_knowledge_point_ids = await _filter_existing_knowledge_point_ids(
+        db,
+        knowledge_point_ids=knowledge_point_ids,
+    )
+    if not valid_knowledge_point_ids:
         return
 
     now = datetime.now(timezone.utc)
     score_ratio = normalize_score_ratio(score)
 
-    for kp_id in knowledge_point_ids:
+    for kp_id in valid_knowledge_point_ids:
         result = await db.execute(
             select(StudentKnowledgeMastery).where(
                 StudentKnowledgeMastery.student_id == student_id,

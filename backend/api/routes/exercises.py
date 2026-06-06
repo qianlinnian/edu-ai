@@ -30,6 +30,32 @@ class ExerciseAttemptRequest(BaseModel):
     student_answer: str
 
 
+async def _resolve_attempt_course_id(
+    *,
+    db: AsyncSession,
+    exercise_id: int | None,
+    generated_exercise_id: int | None,
+    user: User,
+) -> int:
+    if bool(exercise_id) == bool(generated_exercise_id):
+        raise HTTPException(status_code=400, detail="Exactly one of exercise_id or generated_exercise_id is required")
+
+    if exercise_id is not None:
+        exercise = (await db.execute(select(ExercisePool).where(ExercisePool.id == exercise_id))).scalar_one_or_none()
+        if not exercise:
+            raise HTTPException(status_code=400, detail="Exercise not found")
+        return exercise.course_id
+
+    generated = (
+        await db.execute(select(GeneratedExercise).where(GeneratedExercise.id == generated_exercise_id))
+    ).scalar_one_or_none()
+    if not generated:
+        raise HTTPException(status_code=400, detail="Generated exercise not found")
+    if generated.student_id != user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to submit attempts for another student's exercise")
+    return generated.course_id
+
+
 @router.post("/generate")
 async def generate_exercises(
     data: ExerciseGenRequest,
@@ -75,6 +101,20 @@ async def submit_attempt(
     user: User = Depends(get_current_user),
 ):
     """Submit attempt, auto-grade it, and update mastery."""
+    if user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Only students can submit exercise attempts")
+
+    course_id = await _resolve_attempt_course_id(
+        db=db,
+        exercise_id=data.exercise_id,
+        generated_exercise_id=data.generated_exercise_id,
+        user=user,
+    )
+    course = (await db.execute(select(Course).where(Course.id == course_id))).scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    await ensure_course_access(db, course=course, user=user)
+
     try:
         attempt = await create_attempt_and_update_mastery(
             db,

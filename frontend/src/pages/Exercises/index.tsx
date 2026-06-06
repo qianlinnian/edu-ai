@@ -1,221 +1,485 @@
-import { useState } from 'react'
-import { Card, Button, Radio, Space, Tag, Progress, Alert, Divider } from 'antd'
-import { CheckCircleOutlined, CloseCircleOutlined, TrophyOutlined, ReloadOutlined, FireOutlined } from '@ant-design/icons'
+import { useEffect, useMemo, useState } from 'react'
+import { useParams } from 'react-router-dom'
+import {
+  Alert,
+  Button,
+  Card,
+  Empty,
+  Input,
+  Progress,
+  Radio,
+  Select,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+  message,
+} from 'antd'
+import { FireOutlined, ReloadOutlined, TrophyOutlined } from '@ant-design/icons'
+import { courseAPI, exerciseAPI, getErrorMessage } from '../../services/api'
+import { useAuthStore } from '../../hooks/useAuthStore'
 
-interface Question {
+type CourseItem = {
   id: number
-  text: string
-  code?: string
-  options: { key: string; label: string }[]
-  answer: string
-  explanation: string
-  knowledge: string
-  difficulty: 1 | 2 | 3
+  name: string
+  code: string
 }
 
-const QUESTIONS: Question[] = [
-  {
-    id: 1, text: '以下代码的输出结果是什么？',
-    code: 'for i in range(3):\n    print(i, end=" ")',
-    options: [{ key: 'A', label: '1 2 3' }, { key: 'B', label: '0 1 2' }, { key: 'C', label: '0 1 2 3' }, { key: 'D', label: '1 2' }],
-    answer: 'B',
-    explanation: 'range(3) 生成序列 0, 1, 2（不包含3），end=" " 使输出用空格分隔而不是换行。',
-    knowledge: '循环结构', difficulty: 1,
-  },
-  {
-    id: 2, text: '下列哪个选项正确定义了递归函数计算阶乘？',
-    options: [
-      { key: 'A', label: 'def fact(n): return n * fact(n)' },
-      { key: 'B', label: 'def fact(n): return n * fact(n-1) if n > 0 else 1' },
-      { key: 'C', label: 'def fact(n): return n * fact(n+1)' },
-      { key: 'D', label: 'def fact(n): return fact(n) * n' },
-    ],
-    answer: 'B',
-    explanation: '递归函数必须有终止条件（n==0 返回1），选项B正确设置了终止条件并递减n。',
-    knowledge: '递归算法', difficulty: 2,
-  },
-  {
-    id: 3, text: 'x = [1,2,3,4,5]，执行 x[1:3] 的结果是？',
-    options: [{ key: 'A', label: '[1,2,3]' }, { key: 'B', label: '[2,3,4]' }, { key: 'C', label: '[2,3]' }, { key: 'D', label: '[1,2]' }],
-    answer: 'C',
-    explanation: '切片 x[1:3] 取索引1到2（不含3）的元素，即 x[1]=2 和 x[2]=3。',
-    knowledge: '列表操作', difficulty: 1,
-  },
-  {
-    id: 4, text: '以下关于 Python 函数参数的说法，正确的是？',
-    options: [
-      { key: 'A', label: '形参是调用函数时传入的值' },
-      { key: 'B', label: '实参是函数定义中的参数名' },
-      { key: 'C', label: '形参是函数定义中的参数名，实参是调用时传入的值' },
-      { key: 'D', label: '形参和实参是同一个概念' },
-    ],
-    answer: 'C',
-    explanation: '形参（parameter）是函数定义中的参数占位符，实参（argument）是调用函数时实际传入的值。',
-    knowledge: '函数', difficulty: 1,
-  },
-  {
-    id: 5, text: '下列代码执行后 result 的值是？\n\nresult = [x**2 for x in range(4) if x % 2 == 0]',
-    options: [{ key: 'A', label: '[0, 4]' }, { key: 'B', label: '[0, 1, 4, 9]' }, { key: 'C', label: '[4, 16]' }, { key: 'D', label: '[1, 9]' }],
-    answer: 'A',
-    explanation: 'range(4) 产生 0,1,2,3；过滤偶数得 0,2；平方得 [0, 4]。',
-    knowledge: '列表推导式', difficulty: 2,
-  },
-]
+type ExerciseOption = {
+  key: string
+  label: string
+}
 
-const DIFFICULTY_LABEL: Record<number, string> = { 1: '⭐', 2: '⭐⭐', 3: '⭐⭐⭐' }
+type ExerciseItem = {
+  id: number
+  source?: 'pool' | 'generated'
+  generation_method?: 'llm' | 'pool_recommendation' | 'fallback'
+  type?: string
+  question: string
+  options?: Array<ExerciseOption | string> | null
+  difficulty?: number
+  knowledge_point_ids?: number[]
+  generated_exercise_id?: number
+}
+
+type GenerationResponse = {
+  exercises: ExerciseItem[]
+  source: string
+  generation_method: string
+  target_knowledge_points: {
+    knowledge_unit_id: number
+    name: string
+    mastery_score: number
+    attempt_count: number
+  }[]
+  source_summary: {
+    llm: number
+    pool: number
+    fallback: number
+  }
+  fallback_used: boolean
+}
+
+type AttemptResult = {
+  is_correct: boolean
+  score: number
+  feedback: string
+  alerts_refreshed?: number
+}
+
+type ExerciseMode = 'pool' | 'personalized'
+
+const difficultyLabel = (value?: number) => '⭐'.repeat(Math.min(Math.max(Number(value || 1), 1), 5))
+
+const itemKey = (item: ExerciseItem) => `${item.source || 'pool'}-${item.generated_exercise_id || item.id}`
+
+const normalizeOptions = (options?: ExerciseItem['options']) => {
+  if (!Array.isArray(options)) return []
+  return options
+    .map((option, index) => {
+      if (typeof option === 'string') {
+        const match = option.trim().match(/^([A-Za-z])[\.\s、:：-]+(.+)$/)
+        return {
+          key: (match?.[1] || String.fromCharCode(65 + index)).toUpperCase(),
+          label: (match?.[2] || option).trim(),
+        }
+      }
+      if (option && typeof option === 'object') {
+        return {
+          key: String(option.key || String.fromCharCode(65 + index)).trim().toUpperCase(),
+          label: String(option.label || '').trim(),
+        }
+      }
+      return null
+    })
+    .filter((option): option is ExerciseOption => !!option?.label)
+}
 
 export default function Exercises() {
-  const [current, setCurrent] = useState(0)
-  const [selected, setSelected] = useState<string | null>(null)
-  const [submitted, setSubmitted] = useState(false)
-  const [answers, setAnswers] = useState<Record<number, { selected: string; correct: boolean }>>({})
-  const [finished, setFinished] = useState(false)
+  const { courseId: routeCourseId } = useParams()
+  const user = useAuthStore((state) => state.user)
+  const isStudent = user?.role === 'student'
 
-  const q = QUESTIONS[current]
-  const total = QUESTIONS.length
-  const isLast = current === total - 1
-  const isCorrect = selected === q.answer
+  const [courses, setCourses] = useState<CourseItem[]>([])
+  const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>()
+  const [poolExercises, setPoolExercises] = useState<ExerciseItem[]>([])
+  const [generatedExercises, setGeneratedExercises] = useState<ExerciseItem[]>([])
+  const [mode, setMode] = useState<ExerciseMode>('pool')
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [answerDraft, setAnswerDraft] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [loadingPool, setLoadingPool] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [pageError, setPageError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [results, setResults] = useState<Record<string, AttemptResult>>({})
 
-  const handleSubmit = () => {
-    if (!selected) return
-    setSubmitted(true)
-    setAnswers(prev => ({ ...prev, [q.id]: { selected, correct: selected === q.answer } }))
+  const activeItems = mode === 'personalized' ? generatedExercises : poolExercises
+  const currentItem = activeItems[currentIndex]
+  const currentKey = currentItem ? itemKey(currentItem) : ''
+  const currentResult = currentKey ? results[currentKey] : undefined
+  const normalizedOptions = useMemo(() => normalizeOptions(currentItem?.options), [currentItem])
+
+  const completion = useMemo(() => {
+    if (activeItems.length === 0) return 0
+    const finished = activeItems.filter((item) => results[itemKey(item)]).length
+    return Math.round((finished / activeItems.length) * 100)
+  }, [activeItems, results])
+
+  const scoreSummary = useMemo(() => {
+    if (activeItems.length === 0) return { correct: 0, total: 0, score: 0 }
+    const attempts = activeItems
+      .map((item) => results[itemKey(item)])
+      .filter(Boolean) as AttemptResult[]
+    const correct = attempts.filter((item) => item.is_correct).length
+    return {
+      correct,
+      total: activeItems.length,
+      score: attempts.length ? Math.round(attempts.reduce((sum, item) => sum + item.score, 0) / attempts.length) : 0,
+    }
+  }, [activeItems, results])
+
+  const resetSession = (nextMode: ExerciseMode) => {
+    setMode(nextMode)
+    setCurrentIndex(0)
+    setAnswerDraft('')
+    setAnswers({})
+    setResults({})
+  }
+
+  const loadPoolExercises = async (courseId: number) => {
+    setLoadingPool(true)
+    setPageError(null)
+    try {
+      const { data } = await exerciseAPI.listPool(courseId)
+      setPoolExercises(data || [])
+      if (mode === 'pool') {
+        setCurrentIndex(0)
+        setAnswerDraft('')
+        setAnswers({})
+        setResults({})
+      }
+      if ((data || []).length === 0) {
+        setNotice('当前课程题库为空。学生端可尝试“生成个性化练习”；教师端需先补充题库或知识点。')
+      } else if (mode === 'pool') {
+        setNotice('当前显示课程题库练习。该视图优先用于验证现有题库覆盖，不代表个性化生成结果。')
+      }
+    } catch (error) {
+      setPoolExercises([])
+      setPageError(getErrorMessage(error, '题库练习加载失败'))
+    } finally {
+      setLoadingPool(false)
+    }
+  }
+
+  const loadCourses = async () => {
+    try {
+      const { data } = await courseAPI.list()
+      const nextCourses = data || []
+      setCourses(nextCourses)
+      const routeValue = Number(routeCourseId)
+      const preferredId = Number.isFinite(routeValue) && nextCourses.some((item: CourseItem) => item.id === routeValue)
+        ? routeValue
+        : nextCourses[0]?.id
+      setSelectedCourseId(preferredId)
+      if (preferredId) {
+        await loadPoolExercises(preferredId)
+      }
+    } catch (error) {
+      setPageError(getErrorMessage(error, '课程列表加载失败'))
+    }
+  }
+
+  useEffect(() => {
+    void loadCourses()
+  }, [routeCourseId])
+
+  const handleCourseChange = async (value: number) => {
+    setSelectedCourseId(value)
+    setGeneratedExercises([])
+    resetSession('pool')
+    await loadPoolExercises(value)
+  }
+
+  const handleGenerate = async () => {
+    if (!selectedCourseId) {
+      message.warning('请先选择课程')
+      return
+    }
+    setGenerating(true)
+    setPageError(null)
+    try {
+      const { data } = await exerciseAPI.generate({
+        course_id: selectedCourseId,
+        exercise_type: 'choice',
+        difficulty: 2,
+        count: 5,
+        use_llm: true,
+      })
+
+      const response = data as GenerationResponse
+      setGeneratedExercises(response.exercises || [])
+      resetSession('personalized')
+
+      const weakNames = response.target_knowledge_points.map((item) => item.name).filter(Boolean).slice(0, 3).join('、')
+      const baseNotice = weakNames
+        ? `本轮练习面向薄弱知识点：${weakNames}。`
+        : '本轮练习按当前课程与学情状态生成。'
+
+      if (response.fallback_used) {
+        setNotice(
+          `${baseNotice} 当前题目来源包含兜底题（pool=${response.source_summary.pool}，fallback=${response.source_summary.fallback}）。这表示题库或 LLM 结果不足，当前链路仍可用，但不应表述为完全稳定的自适应出题。`
+        )
+      } else if (response.generation_method === 'llm') {
+        setNotice(`${baseNotice} 当前题目主要来自 LLM 个性化生成。`)
+      } else {
+        setNotice(`${baseNotice} 当前题目主要来自课程题库推荐。`)
+      }
+    } catch (error) {
+      setGeneratedExercises([])
+      setPageError(getErrorMessage(error, '个性化练习生成失败'))
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleSubmit = async () => {
+    if (!currentItem) return
+    if (!answerDraft.trim()) {
+      message.warning('请先作答')
+      return
+    }
+    if (currentResult) return
+
+    setSubmitting(true)
+    try {
+      const { data } = await exerciseAPI.attempt({
+        exercise_id: currentItem.source === 'pool' ? currentItem.id : undefined,
+        generated_exercise_id: currentItem.generated_exercise_id || (currentItem.source === 'generated' ? currentItem.id : undefined),
+        student_answer: answerDraft.trim(),
+      })
+      setAnswers((prev) => ({ ...prev, [currentKey]: answerDraft.trim() }))
+      setResults((prev) => ({ ...prev, [currentKey]: data }))
+      if ((data.alerts_refreshed || 0) > 0) {
+        setNotice(`本次作答已刷新 ${data.alerts_refreshed} 条学习预警，可前往学情页查看。`)
+      }
+    } catch (error) {
+      message.error(getErrorMessage(error, '提交答案失败'))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleNext = () => {
-    if (isLast) { setFinished(true); return }
-    setCurrent(c => c + 1)
-    setSelected(null)
-    setSubmitted(false)
+    if (!currentItem) return
+    const nextIndex = currentIndex + 1
+    if (nextIndex >= activeItems.length) {
+      setAnswerDraft('')
+      return
+    }
+    setCurrentIndex(nextIndex)
+    const nextItem = activeItems[nextIndex]
+    const nextKey = itemKey(nextItem)
+    setAnswerDraft(answers[nextKey] || '')
   }
 
-  const handleRestart = () => {
-    setCurrent(0); setSelected(null); setSubmitted(false); setAnswers({}); setFinished(false)
-  }
+  useEffect(() => {
+    if (!currentItem) {
+      setAnswerDraft('')
+      return
+    }
+    setAnswerDraft(answers[currentKey] || '')
+  }, [currentItem, currentKey, answers])
 
-  const correctCount = Object.values(answers).filter(a => a.correct).length
-
-  if (finished) {
-    const score = Math.round(correctCount / total * 100)
+  const renderSummary = () => {
+    if (activeItems.length === 0 || completion < 100) return null
     return (
-      <div>
-        <div style={{ marginBottom: 24, fontSize: 20, fontWeight: 700 }}>练习中心</div>
-        <Card style={{ borderRadius: 12, textAlign: 'center', padding: '32px 0' }} bordered={false}>
-          <TrophyOutlined style={{ fontSize: 64, color: score >= 80 ? '#faad14' : score >= 60 ? '#00a8ff' : '#ff4d4f' }} />
-          <div style={{ fontSize: 28, fontWeight: 800, marginTop: 16, color: score >= 80 ? '#52c41a' : score >= 60 ? '#00a8ff' : '#ff4d4f' }}>
-            {correctCount}/{total} 题正确 · {score}分
-          </div>
-          <div style={{ color: '#888', marginTop: 8 }}>
-            {score >= 80 ? '优秀！继续保持 🎉' : score >= 60 ? '良好，还有提升空间' : '加油，多加练习！'}
-          </div>
-          <Divider />
-          <div style={{ textAlign: 'left', maxWidth: 480, margin: '0 auto' }}>
-            <div style={{ fontWeight: 600, marginBottom: 12 }}>知识点掌握变化</div>
-            {[
-              { label: '循环结构', before: 30, after: 50 },
-              { label: '递归算法', before: 42, after: 55 },
-              { label: '列表操作', before: 78, after: 85 },
-            ].map(k => (
-              <div key={k.label} style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                  <span>{k.label}</span>
-                  <span style={{ color: '#52c41a' }}>{k.before}% → {k.after}% ↑</span>
-                </div>
-                <Progress percent={k.after} strokeColor="#52c41a" size="small" />
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center', gap: 12 }}>
-            <Button icon={<ReloadOutlined />} onClick={handleRestart}>再练一次</Button>
-            <Button type="primary" icon={<FireOutlined />}>继续强化练习</Button>
-          </div>
-        </Card>
-      </div>
+      <Card bordered={false} style={{ borderRadius: 12, marginBottom: 16 }}>
+        <Space direction="vertical" size={12} style={{ width: '100%', alignItems: 'center' }}>
+          <TrophyOutlined style={{ fontSize: 40, color: scoreSummary.score >= 80 ? '#faad14' : '#1677ff' }} />
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            已完成本轮练习
+          </Typography.Title>
+          <Typography.Text>
+            正确 {scoreSummary.correct}/{scoreSummary.total} · 平均分 {scoreSummary.score}
+          </Typography.Text>
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={() => resetSession(mode)}>
+              重新开始本轮
+            </Button>
+            {isStudent && (
+              <Button type="primary" icon={<FireOutlined />} onClick={() => void handleGenerate()}>
+                再生成一组
+              </Button>
+            )}
+          </Space>
+        </Space>
+      </Card>
     )
   }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <span style={{ fontSize: 20, fontWeight: 700 }}>练习中心</span>
-        <Tag color="blue" icon={<FireOutlined />}>基于薄弱点：循环结构 · 递归</Tag>
-      </div>
-
-      {/* 进度条 */}
-      <Card style={{ borderRadius: 12, marginBottom: 16 }} bordered={false}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontWeight: 600 }}>Q{current + 1} / {total}</span>
-          <span style={{ color: '#888', fontSize: 13 }}>{DIFFICULTY_LABEL[q.difficulty]} {q.knowledge}</span>
-        </div>
-        <Progress percent={Math.round(current / total * 100)} strokeColor="#00a8ff" showInfo={false} size="small" />
-      </Card>
-
-      {/* 题目 */}
-      <Card style={{ borderRadius: 12, marginBottom: 16 }} bordered={false}>
-        <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 16, lineHeight: 1.7 }}>{q.text}</div>
-        {q.code && (
-          <pre style={{
-            background: '#1e1e1e', color: '#d4d4d4', padding: '14px 18px',
-            borderRadius: 10, fontSize: 14, marginBottom: 16, overflowX: 'auto',
-          }}>
-            {q.code}
-          </pre>
-        )}
-        <Radio.Group
-          value={selected}
-          onChange={e => { if (!submitted) setSelected(e.target.value) }}
-          style={{ width: '100%' }}
-        >
-          <Space direction="vertical" style={{ width: '100%' }}>
-            {q.options.map(opt => {
-              let bg = 'transparent'
-              let border = '1px solid #e8e8e8'
-              if (submitted) {
-                if (opt.key === q.answer) { bg = '#f6ffed'; border = '1px solid #b7eb8f' }
-                else if (opt.key === selected) { bg = '#fff1f0'; border = '1px solid #ffa39e' }
-              } else if (opt.key === selected) { bg = '#e6f4ff'; border = '1px solid #91caff' }
-              return (
-                <div
-                  key={opt.key}
-                  onClick={() => { if (!submitted) setSelected(opt.key) }}
-                  style={{
-                    padding: '12px 16px', borderRadius: 10, cursor: submitted ? 'default' : 'pointer',
-                    background: bg, border, display: 'flex', alignItems: 'center', gap: 10,
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  <Radio value={opt.key} />
-                  <span style={{ flex: 1, color: '#1f1f1f' }}><strong>{opt.key}.</strong> {opt.label}</span>
-                  {submitted && opt.key === q.answer && <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />}
-                  {submitted && opt.key === selected && opt.key !== q.answer && <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 18 }} />}
-                </div>
-              )
-            })}
-          </Space>
-        </Radio.Group>
-
-        {submitted && (
-          <Alert
-            type={isCorrect ? 'success' : 'error'}
-            showIcon
-            message={isCorrect ? '✅ 回答正确！' : `❌ 正确答案是 ${q.answer}`}
-            description={q.explanation}
-            style={{ marginTop: 16, borderRadius: 10 }}
+      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 20 }} wrap>
+        <Typography.Title level={4} style={{ margin: 0 }}>练习中心</Typography.Title>
+        <Space wrap>
+          <Select
+            value={selectedCourseId}
+            onChange={(value) => void handleCourseChange(value)}
+            style={{ width: 260 }}
+            placeholder="选择课程"
+            options={courses.map((item) => ({ value: item.id, label: `${item.name}（${item.code}）` }))}
           />
-        )}
+          <Button
+            onClick={() => {
+              if (!selectedCourseId) return
+              resetSession('pool')
+              setNotice('当前显示课程题库练习。该视图优先用于验证现有题库覆盖，不代表个性化生成结果。')
+              void loadPoolExercises(selectedCourseId)
+            }}
+            loading={loadingPool}
+          >
+            查看课程题库
+          </Button>
+          {isStudent && (
+            <Button type="primary" icon={<FireOutlined />} onClick={() => void handleGenerate()} loading={generating}>
+              生成个性化练习
+            </Button>
+          )}
+        </Space>
+      </Space>
+
+      {!isStudent && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="当前页面主要用于学生侧练习链路演示"
+          description="教师/管理员可以查看课程题库，但个性化生成与作答反馈主链路按当前产品口径面向学生端。"
+        />
+      )}
+
+      {pageError && <Alert type="error" showIcon message={pageError} style={{ marginBottom: 16 }} />}
+      {notice && (
+        <Alert
+          type={notice.includes('兜底题') ? 'warning' : 'info'}
+          showIcon
+          message="练习生成说明"
+          description={notice}
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
+      <Card bordered={false} style={{ borderRadius: 12, marginBottom: 16 }}>
+        <Space size={8} wrap>
+          <Tag color={mode === 'pool' ? 'blue' : 'default'}>课程题库</Tag>
+          <Tag color={mode === 'personalized' ? 'purple' : 'default'}>个性化练习</Tag>
+          {currentItem?.source && <Tag>{currentItem.source === 'pool' ? '题库来源' : '生成来源'}</Tag>}
+          {currentItem?.generation_method && <Tag color={currentItem.generation_method === 'fallback' ? 'warning' : 'processing'}>{currentItem.generation_method}</Tag>}
+          {currentItem?.difficulty && <Tag>{difficultyLabel(currentItem.difficulty)}</Tag>}
+        </Space>
+        <Progress percent={completion} showInfo={false} style={{ marginTop: 12 }} />
       </Card>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-        {!submitted ? (
-          <Button type="primary" disabled={!selected} onClick={handleSubmit}
-            style={{ borderRadius: 8, minWidth: 100 }}>提交答案</Button>
-        ) : (
-          <Button type="primary" onClick={handleNext}
-            style={{ borderRadius: 8, minWidth: 100, background: isLast ? '#52c41a' : undefined }}>
-            {isLast ? '查看报告 🎯' : '下一题 →'}
-          </Button>
-        )}
-      </div>
+      {renderSummary()}
+
+      {loadingPool || generating ? (
+        <Card bordered={false} style={{ borderRadius: 12, textAlign: 'center', padding: 40 }}>
+          <Spin />
+        </Card>
+      ) : activeItems.length === 0 ? (
+        <Card bordered={false} style={{ borderRadius: 12 }}>
+          <Empty description={mode === 'personalized' ? '暂无生成结果' : '当前课程暂无可用练习'} />
+        </Card>
+      ) : currentItem ? (
+        <Card bordered={false} style={{ borderRadius: 12 }}>
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <Typography.Text strong>第 {currentIndex + 1} 题 / 共 {activeItems.length} 题</Typography.Text>
+              <Space size={8} wrap>
+                {(currentItem.knowledge_point_ids || []).slice(0, 3).map((item) => (
+                  <Tag key={item}>知识点 {item}</Tag>
+                ))}
+              </Space>
+            </div>
+
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              {currentItem.question}
+            </Typography.Title>
+
+            {currentItem.generation_method === 'fallback' && (
+              <Alert
+                type="warning"
+                showIcon
+                message="当前题目包含兜底逻辑"
+                description="这表示题库或 LLM 生成结果不足，系统为保持练习链路可用生成了兜底题。当前能力可用，但不应表述为完全稳定的高质量自适应出题。"
+              />
+            )}
+
+            {normalizedOptions.length > 0 ? (
+              <Radio.Group
+                value={answerDraft || null}
+                onChange={(event) => !currentResult && setAnswerDraft(event.target.value)}
+                style={{ width: '100%' }}
+              >
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  {normalizedOptions.map((option, index) => (
+                    <div
+                      key={`${currentKey}-option-${option.key || index}`}
+                      style={{
+                        border: '1px solid #e5e7eb',
+                        borderRadius: 10,
+                        padding: '12px 14px',
+                        background: answerDraft === option.key ? '#f0f7ff' : '#fff',
+                      }}
+                    >
+                      <Radio value={option.key}>
+                        <strong>{option.key}.</strong> {option.label}
+                      </Radio>
+                    </div>
+                  ))}
+                </Space>
+              </Radio.Group>
+            ) : (
+              <Input.TextArea
+                rows={5}
+                value={answerDraft}
+                disabled={!!currentResult}
+                onChange={(event) => setAnswerDraft(event.target.value)}
+                placeholder="请输入你的答案"
+              />
+            )}
+
+            {currentResult && (
+              <Alert
+                type={currentResult.is_correct ? 'success' : 'warning'}
+                showIcon
+                message={currentResult.is_correct ? `回答正确 · 得分 ${currentResult.score}` : `已提交 · 得分 ${currentResult.score}`}
+                description={currentResult.feedback}
+              />
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+              {!isStudent && currentIndex < activeItems.length - 1 && (
+                <Button onClick={handleNext}>
+                  下一题
+                </Button>
+              )}
+              {!currentResult && isStudent && (
+                <Button type="primary" onClick={() => void handleSubmit()} loading={submitting}>
+                  提交答案
+                </Button>
+              )}
+              {currentResult && currentIndex < activeItems.length - 1 && (
+                <Button type="primary" onClick={handleNext}>
+                  下一题
+                </Button>
+              )}
+            </div>
+          </Space>
+        </Card>
+      ) : null}
     </div>
   )
 }
