@@ -29,7 +29,7 @@ async def get_student_mastery(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    ensure_student_or_teacher_access(course=course, student_id=student_id, user=user)
+    await ensure_student_or_teacher_access(db, course=course, student_id=student_id, user=user)
     return await student_mastery_overview(db, student_id=student_id, course_id=course_id)
 
 
@@ -42,7 +42,7 @@ async def get_weak_points(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    ensure_student_or_teacher_access(course=course, student_id=student_id, user=user)
+    await ensure_student_or_teacher_access(db, course=course, student_id=student_id, user=user)
     return await weak_points(db, student_id=student_id, course_id=course_id, threshold=threshold)
 
 
