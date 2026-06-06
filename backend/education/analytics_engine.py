@@ -113,7 +113,7 @@ async def refresh_learning_alerts(
     student_id: int | None = None,
     threshold: float = 0.4,
 ) -> int:
-    query = (
+    weak_rows_query = (
         select(StudentKnowledgeMastery, KnowledgeUnit)
         .join(KnowledgeUnit, StudentKnowledgeMastery.knowledge_unit_id == KnowledgeUnit.id)
         .where(
@@ -122,8 +122,22 @@ async def refresh_learning_alerts(
         )
     )
     if student_id:
-        query = query.where(StudentKnowledgeMastery.student_id == student_id)
-    rows = (await db.execute(query)).all()
+        weak_rows_query = weak_rows_query.where(StudentKnowledgeMastery.student_id == student_id)
+    rows = (await db.execute(weak_rows_query)).all()
+    active_weak_keys = {(mastery.student_id, ku.id) for mastery, ku in rows}
+
+    existing_query = select(LearningAlert).where(
+        LearningAlert.course_id == course_id,
+        LearningAlert.alert_type == "knowledge_weak",
+        LearningAlert.is_resolved.is_(False),
+    )
+    if student_id:
+        existing_query = existing_query.where(LearningAlert.student_id == student_id)
+    existing_alerts = (await db.execute(existing_query)).scalars().all()
+    for alert in existing_alerts:
+        knowledge_unit_id = (alert.details or {}).get("knowledge_unit_id")
+        if (alert.student_id, knowledge_unit_id) not in active_weak_keys:
+            alert.is_resolved = True
 
     created = 0
     for mastery, ku in rows:

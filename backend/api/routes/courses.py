@@ -11,6 +11,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from core.permissions import ensure_course_access, ensure_course_manager
 from core.security import get_current_user
 from core.storage import remove_object, get_minio_client, upload_bytes
 from models.agent import AgentInstance, AgentWorkflow
@@ -42,6 +43,16 @@ class CourseResponse(BaseModel):
     teacher_id: int
 
     model_config = {"from_attributes": True}
+
+
+class CourseBrowseResponse(BaseModel):
+    id: int
+    name: str
+    code: str
+    description: str | None
+    domain: str
+    teacher_id: int
+    enrolled: bool
 
 
 class KnowledgeUnitCreate(BaseModel):
@@ -99,28 +110,6 @@ async def _get_course_or_404(db: AsyncSession, course_id: int) -> Course:
     return course
 
 
-async def _ensure_course_access(db: AsyncSession, *, course: Course, user: User) -> None:
-    if user.role == UserRole.ADMIN:
-        return
-    if user.role == UserRole.TEACHER and course.teacher_id == user.id:
-        return
-    if user.role == UserRole.STUDENT:
-        result = await db.execute(
-            select(Enrollment.id).where(Enrollment.course_id == course.id, Enrollment.student_id == user.id)
-        )
-        if result.scalar_one_or_none() is not None:
-            return
-    raise HTTPException(status_code=403, detail="Not allowed to access this course")
-
-
-def _ensure_course_manager(*, course: Course, user: User) -> None:
-    if user.role == UserRole.ADMIN:
-        return
-    if user.role == UserRole.TEACHER and course.teacher_id == user.id:
-        return
-    raise HTTPException(status_code=403, detail="Teacher or admin access required")
-
-
 def _knowledge_name_from_text(text: str, index: int) -> str:
     normalized = " ".join(text.strip().split())
     if not normalized:
@@ -152,6 +141,35 @@ async def list_courses(db: AsyncSession = Depends(get_db), user: User = Depends(
     return result.scalars().all()
 
 
+@router.get("/browse", response_model=list[CourseBrowseResponse])
+async def browse_courses(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Only students can browse course enrollment options")
+
+    query = select(Course).where(Course.is_active.is_(True)).order_by(Course.created_at.desc())
+    result = await db.execute(query)
+    courses = result.scalars().all()
+
+    enrolled_course_ids = set(
+        (
+            await db.execute(select(Enrollment.course_id).where(Enrollment.student_id == user.id))
+        ).scalars().all()
+    )
+
+    return [
+        CourseBrowseResponse(
+            id=course.id,
+            name=course.name,
+            code=course.code,
+            description=course.description,
+            domain=course.domain,
+            teacher_id=course.teacher_id,
+            enrolled=course.id in enrolled_course_ids,
+        )
+        for course in courses
+    ]
+
+
 @router.get("/{course_id}", response_model=CourseResponse)
 async def get_course(
     course_id: int,
@@ -159,7 +177,7 @@ async def get_course(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    await _ensure_course_access(db, course=course, user=user)
+    await ensure_course_access(db, course=course, user=user)
     return course
 
 
@@ -179,6 +197,23 @@ async def enroll_course(course_id: int, db: AsyncSession = Depends(get_db), user
     return {"message": "enrolled"}
 
 
+@router.delete("/{course_id}/enroll")
+async def unenroll_course(course_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Only students can unenroll from courses")
+    await _get_course_or_404(db, course_id)
+    existing = await db.execute(
+        select(Enrollment).where(Enrollment.student_id == user.id, Enrollment.course_id == course_id)
+    )
+    enrollment = existing.scalar_one_or_none()
+    if enrollment is None:
+        raise HTTPException(status_code=404, detail="Enrollment not found")
+
+    await db.delete(enrollment)
+    await db.flush()
+    return {"message": "unenrolled"}
+
+
 @router.get("/{course_id}/students", response_model=list[CourseStudentResponse])
 async def list_course_students(
     course_id: int,
@@ -186,7 +221,7 @@ async def list_course_students(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    _ensure_course_manager(course=course, user=user)
+    ensure_course_manager(course=course, user=user)
     rows = (
         await db.execute(
             select(User, Enrollment.enrolled_at)
@@ -215,7 +250,7 @@ async def update_course(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    _ensure_course_manager(course=course, user=user)
+    ensure_course_manager(course=course, user=user)
     course.name = data.name
     course.code = data.code
     course.description = data.description
@@ -232,7 +267,7 @@ async def delete_course(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    _ensure_course_manager(course=course, user=user)
+    ensure_course_manager(course=course, user=user)
 
     resources = (
         await db.execute(select(CourseResource).where(CourseResource.course_id == course_id))
@@ -315,7 +350,7 @@ async def create_knowledge_unit(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    _ensure_course_manager(course=course, user=user)
+    ensure_course_manager(course=course, user=user)
     payload = data.model_dump()
     tags = payload.pop("tags", None)
     ku = KnowledgeUnit(**payload, tags={"values": tags} if tags else None, course_id=course_id)
@@ -332,7 +367,7 @@ async def list_knowledge_units(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    await _ensure_course_access(db, course=course, user=user)
+    await ensure_course_access(db, course=course, user=user)
     result = await db.execute(
         select(KnowledgeUnit).where(KnowledgeUnit.course_id == course_id).order_by(KnowledgeUnit.order_index)
     )
@@ -346,7 +381,7 @@ async def generate_knowledge_units(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    _ensure_course_manager(course=course, user=user)
+    ensure_course_manager(course=course, user=user)
 
     existing_names = set(
         (
@@ -395,7 +430,7 @@ async def generate_knowledge_units(
 @router.get("/{course_id}/resources", response_model=list[CourseResourceResponse])
 async def list_resources(course_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     course = await _get_course_or_404(db, course_id)
-    await _ensure_course_access(db, course=course, user=user)
+    await ensure_course_access(db, course=course, user=user)
 
     result = await db.execute(
         select(CourseResource).where(CourseResource.course_id == course_id).order_by(CourseResource.created_at.desc())
@@ -411,7 +446,7 @@ async def download_resource(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    await _ensure_course_access(db, course=course, user=user)
+    await ensure_course_access(db, course=course, user=user)
     resource_result = await db.execute(
         select(CourseResource).where(
             CourseResource.id == resource_id,
@@ -451,7 +486,7 @@ async def upload_resource(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    _ensure_course_manager(course=course, user=user)
+    ensure_course_manager(course=course, user=user)
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="Invalid file")
@@ -503,7 +538,7 @@ async def delete_resource(
     user: User = Depends(get_current_user),
 ):
     course = await _get_course_or_404(db, course_id)
-    _ensure_course_manager(course=course, user=user)
+    ensure_course_manager(course=course, user=user)
     resource_result = await db.execute(
         select(CourseResource).where(CourseResource.id == resource_id, CourseResource.course_id == course_id)
     )

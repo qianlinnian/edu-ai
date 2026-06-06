@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from core.normalization import extract_json_value
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -211,22 +212,7 @@ def _clamp_int(value: int, *, minimum: int, maximum: int) -> int:
 
 
 def _safe_json_loads(raw: str) -> Any:
-    text = raw.strip()
-    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, flags=re.DOTALL | re.IGNORECASE)
-    if fenced:
-        text = fenced.group(1).strip()
-
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start_candidates = [idx for idx in (text.find("["), text.find("{")) if idx >= 0]
-        if not start_candidates:
-            raise
-        start = min(start_candidates)
-        end = max(text.rfind("]"), text.rfind("}"))
-        if end <= start:
-            raise
-        return json.loads(text[start : end + 1])
+    return extract_json_value(raw)
 
 
 def _normalize_choice_options(options: Any) -> list[dict[str, str]]:
@@ -502,6 +488,15 @@ async def generate_targeted_exercises(
         knowledge_point_ids=knowledge_point_ids,
     )
     target_kps = [int(item["id"]) for item in knowledge_context] or knowledge_point_ids
+    target_summary = [
+        {
+            "knowledge_unit_id": int(item["id"]),
+            "name": item["name"],
+            "mastery_score": item["mastery_score"],
+            "attempt_count": item["attempt_count"],
+        }
+        for item in knowledge_context
+    ]
 
     if use_llm and target_kps:
         try:
@@ -534,7 +529,14 @@ async def generate_targeted_exercises(
                 db.add(generated)
                 await db.flush()
                 output.append(_serialize_generated_exercise(generated, generation_method="llm"))
-            return output
+            return {
+                "exercises": output,
+                "source": "generated",
+                "generation_method": "llm",
+                "target_knowledge_points": target_summary,
+                "source_summary": {"llm": len(output), "pool": 0, "fallback": 0},
+                "fallback_used": False,
+            }
 
     result = await db.execute(
         select(ExercisePool).where(
@@ -553,7 +555,7 @@ async def generate_targeted_exercises(
 
     chosen = filtered[:count]
     if len(chosen) >= count:
-        return [
+        output = [
             {
                 "id": item.id,
                 "source": "pool",
@@ -565,6 +567,14 @@ async def generate_targeted_exercises(
             }
             for item in chosen
         ]
+        return {
+            "exercises": output,
+            "source": "pool",
+            "generation_method": "pool_recommendation",
+            "target_knowledge_points": target_summary,
+            "source_summary": {"llm": 0, "pool": len(output), "fallback": 0},
+            "fallback_used": False,
+        }
 
     output: list[dict[str, Any]] = [
         {
@@ -601,4 +611,13 @@ async def generate_targeted_exercises(
         await db.flush()
         output.append(_serialize_generated_exercise(generated, generation_method="fallback"))
 
-    return output
+    fallback_count = sum(1 for item in output if item.get("generation_method") == "fallback")
+    pool_count = sum(1 for item in output if item.get("source") == "pool")
+    return {
+        "exercises": output,
+        "source": output[0]["source"] if output else "empty",
+        "generation_method": "fallback" if fallback_count else "pool_recommendation",
+        "target_knowledge_points": target_summary,
+        "source_summary": {"llm": 0, "pool": pool_count, "fallback": fallback_count},
+        "fallback_used": fallback_count > 0,
+    }

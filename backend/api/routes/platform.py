@@ -12,6 +12,11 @@ from models.user import User, UserRole
 
 router = APIRouter()
 
+SIMULATED_INTEGRATION_NOTE = (
+    "This is a simulated platform integration. The backend issues the embed token and widget_url, "
+    "but it does not perform real platform SDK calls or signature validation."
+)
+
 
 class PlatformConnectionCreate(BaseModel):
     platform_type: Literal["chaoxing", "dingtalk"]
@@ -45,14 +50,59 @@ class PlatformConnectionResponse(BaseModel):
 
 
 class ChaoxingLaunchRequest(BaseModel):
-    course: int = Field(ge=1)
-    token: str = Field(min_length=1)
+    course_id: int = Field(ge=1)
     role: Literal["student", "teacher", "assistant"] = "student"
+    launch_ticket: str = Field(min_length=1, max_length=200)
+
+
+class SimulatedPlatformLaunchResponse(BaseModel):
+    platform: Literal["chaoxing", "dingtalk"]
+    mode: Literal["simulated"]
+    status: Literal["ok"]
+    message: str
+    widget_url: str
+    token: str
+    token_source: str
+    course_id: int
+    course_id_source: str
+    role: Literal["student", "teacher", "assistant"]
+    role_source: str
+    upstream_reference: str
+    upstream_reference_type: str
+    integration_boundary: str
 
 
 def _ensure_platform_manager(user: User) -> None:
     if user.role not in {UserRole.TEACHER, UserRole.ADMIN}:
         raise HTTPException(status_code=403, detail="Teacher or admin access required")
+
+
+def _build_simulated_widget_launch(
+    *,
+    platform_name: Literal["chaoxing", "dingtalk"],
+    user: User,
+    course_id: int,
+    role: Literal["student", "teacher", "assistant"],
+    upstream_reference: str,
+    upstream_reference_type: str,
+) -> SimulatedPlatformLaunchResponse:
+    embed_token = create_access_token(data={"sub": str(user.id), "platform": platform_name, "role": role})
+    return SimulatedPlatformLaunchResponse(
+        platform=platform_name,
+        mode="simulated",
+        status="ok",
+        message=f"Simulated {platform_name} launch prepared",
+        widget_url=f"/widget/chat?course={course_id}&token={embed_token}",
+        token=embed_token,
+        token_source="issued_by_edu_ai_backend",
+        course_id=course_id,
+        course_id_source="provided_by_upstream_platform_payload",
+        role=role,
+        role_source="provided_by_upstream_platform_payload",
+        upstream_reference=upstream_reference,
+        upstream_reference_type=upstream_reference_type,
+        integration_boundary=SIMULATED_INTEGRATION_NOTE,
+    )
 
 
 @router.post("/connections", response_model=PlatformConnectionResponse)
@@ -63,7 +113,14 @@ async def create_connection(
 ):
     _ensure_platform_manager(user)
 
-    conn = PlatformConnection(**data.model_dump())
+    payload = data.model_dump()
+    payload["config"] = {
+        **payload["config"],
+        "integration_mode": "simulated",
+        "integration_boundary": SIMULATED_INTEGRATION_NOTE,
+    }
+
+    conn = PlatformConnection(**payload)
     db.add(conn)
     await db.flush()
     await db.commit()
@@ -82,39 +139,36 @@ async def list_connections(
     return result.scalars().all()
 
 
-@router.post("/chaoxing/lti-launch")
+@router.post("/chaoxing/lti-launch", response_model=SimulatedPlatformLaunchResponse)
 async def chaoxing_lti_launch(
     data: ChaoxingLaunchRequest,
     user: User = Depends(get_current_user),
 ):
-    embed_token = create_access_token(data={"sub": str(user.id)})
-    return {
-        "platform": "chaoxing",
-        "status": "ok",
-        "message": "Chaoxing LTI launch ready",
-        "widget_url": f"/widget/chat?course={data.course}&token={embed_token}",
-        "token": embed_token,
-        "course": data.course,
-        "role": data.role,
-    }
+    return _build_simulated_widget_launch(
+        platform_name="chaoxing",
+        user=user,
+        course_id=data.course_id,
+        role=data.role,
+        upstream_reference=data.launch_ticket,
+        upstream_reference_type="launch_ticket",
+    )
 
 
-@router.get("/dingtalk/auth")
+@router.get("/dingtalk/auth", response_model=SimulatedPlatformLaunchResponse)
 async def dingtalk_auth(
     code: str = Query(min_length=1),
     course_id: int = Query(ge=1),
+    role: Literal["student", "teacher", "assistant"] = Query(default="student"),
     user: User = Depends(get_current_user),
 ):
-    embed_token = create_access_token(data={"sub": str(user.id)})
-    return {
-        "platform": "dingtalk",
-        "status": "ok",
-        "message": "DingTalk auth ready",
-        "code": code,
-        "course_id": course_id,
-        "widget_url": f"/widget/chat?course={course_id}&token={embed_token}",
-        "token": embed_token,
-    }
+    return _build_simulated_widget_launch(
+        platform_name="dingtalk",
+        user=user,
+        course_id=course_id,
+        role=role,
+        upstream_reference=code,
+        upstream_reference_type="auth_code",
+    )
 
 
 @router.post("/dingtalk/webhook")
@@ -127,6 +181,6 @@ async def dingtalk_webhook(request: Request):
     return {
         "msgtype": "text",
         "text": {
-            "content": "Received message, analytics alert workflow is under development.",
+            "content": "Received message. Simulated analytics alert callbacks are not implemented yet.",
         },
     }

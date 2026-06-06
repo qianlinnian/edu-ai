@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useSearchParams } from 'react-router-dom'
-import { agentAPI, courseAPI, createAbortController, fetchSSE, getErrorMessage } from '../../services/api'
+import { agentAPI, chatAPI, courseAPI, createAbortController, fetchSSE, getErrorMessage } from '../../services/api'
 import { useAuthStore } from '../../hooks/useAuthStore'
 
 interface CourseItem {
@@ -150,7 +150,7 @@ export default function Widget() {
     let contentBuffer = ''
 
     fetchSSE(
-      '/api/v1/chat/send-stream',
+      chatAPI.sendStreamUrl,
       {
         agent_id: activeAgent.id,
         course_id: courseIdState,

@@ -2,20 +2,24 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alert, Card, Col, Empty, List, Row, Select, Skeleton, Space, Statistic, Tag, Typography } from 'antd'
 import { AlertOutlined, BarChartOutlined, TeamOutlined, WarningOutlined } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
-import { analyticsAPI, courseAPI } from '../../services/api'
+import { analyticsAPI, courseAPI, getErrorMessage } from '../../services/api'
 import { useAuthStore } from '../../hooks/useAuthStore'
 
 type Course = { id: number; name: string; code: string }
 type Student = { id: number; username: string; full_name: string; email: string }
 type StudentMasteryItem = {
   knowledge_unit?: { id: number; name: string; difficulty?: number }
-  knowledge_point?: string
-  knowledge_point_id?: number
   mastery?: number
   mastery_score?: number
   score?: number
   label?: string
   name?: string
+}
+type WeakPointItem = {
+  knowledge_unit_id: number
+  name: string
+  mastery_score: number
+  attempt_count: number
 }
 type ClassReport = {
   course_id: number
@@ -31,23 +35,18 @@ type ClassReport = {
 }
 type AlertItem = {
   id?: number
-  level?: 'error' | 'warning' | 'info'
   severity?: 'high' | 'medium' | 'low'
   message?: string
-  title?: string
-  content?: string
   student_id?: number
-  student_name?: string
   details?: { knowledge_unit_name?: string; mastery_score?: number; threshold?: number }
 }
 
 const toPercent = (value?: number) => {
   const numeric = Number(value ?? 0)
-  return Math.round((numeric <= 1 ? numeric * 100 : numeric))
+  return Math.round(numeric <= 1 ? numeric * 100 : numeric)
 }
 
 const alertType = (item: AlertItem): 'error' | 'warning' | 'info' => {
-  if (item.level) return item.level
   if (item.severity === 'high') return 'error'
   if (item.severity === 'medium') return 'warning'
   return 'info'
@@ -92,7 +91,7 @@ const buildClassBarOption = (items: ClassReport['by_knowledge_unit']) => ({
 
 function mapMastery(data: StudentMasteryItem[]) {
   return (data || []).map((item) => ({
-    label: item.knowledge_unit?.name || item.knowledge_point || item.label || item.name || `知识点 ${item.knowledge_point_id ?? item.knowledge_unit?.id ?? ''}`,
+    label: item.knowledge_unit?.name || item.label || item.name || '未命名知识点',
     value: toPercent(item.mastery_score ?? item.mastery ?? item.score),
   }))
 }
@@ -105,52 +104,45 @@ export default function Analytics() {
   const [students, setStudents] = useState<Student[]>([])
   const [selectedStudentId, setSelectedStudentId] = useState<number | undefined>()
   const [mastery, setMastery] = useState<{ label: string; value: number }[]>([])
+  const [weakPoints, setWeakPoints] = useState<WeakPointItem[]>([])
   const [classReport, setClassReport] = useState<ClassReport | null>(null)
   const [alerts, setAlerts] = useState<AlertItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [pageError, setPageError] = useState<string | null>(null)
 
   const radarOption = useMemo(() => buildRadarOption(mastery), [mastery])
   const classBarOption = useMemo(() => buildClassBarOption(classReport?.by_knowledge_unit || []), [classReport])
 
-  const loadStudentAnalytics = async (courseId: number, studentId = user?.id) => {
-    if (!studentId) return
-    setLoading(true)
-    try {
-      const [masteryRes, alertsRes] = await Promise.all([
-        analyticsAPI.getStudentMastery(studentId, courseId).catch(() => ({ data: [] })),
-        analyticsAPI.getAlerts(courseId).catch(() => ({ data: [] })),
-      ])
-      setMastery(mapMastery(masteryRes.data || []))
-      setAlerts(alertsRes.data || [])
-    } finally {
-      setLoading(false)
-    }
+  const loadStudentSlice = async (courseId: number, studentId: number) => {
+    const [masteryRes, weakRes, alertsRes] = await Promise.all([
+      analyticsAPI.getStudentMastery(studentId, courseId),
+      analyticsAPI.getWeakPoints(studentId, courseId),
+      analyticsAPI.getAlerts(courseId, studentId),
+    ])
+    setMastery(mapMastery(masteryRes.data || []))
+    setWeakPoints(weakRes.data || [])
+    setAlerts(alertsRes.data || [])
   }
 
   const loadTeacherAnalytics = async (courseId: number, studentId?: number) => {
-    setLoading(true)
-    try {
-      const [reportRes, alertsRes, studentsRes] = await Promise.all([
-        analyticsAPI.getClassReport(courseId).catch(() => ({ data: null })),
-        analyticsAPI.getAlerts(courseId).catch(() => ({ data: [] })),
-        courseAPI.listStudents(courseId).catch(() => ({ data: [] })),
-      ])
+    const [reportRes, alertsRes, studentsRes] = await Promise.all([
+      analyticsAPI.getClassReport(courseId),
+      analyticsAPI.getAlerts(courseId),
+      courseAPI.listStudents(courseId),
+    ])
 
-      const nextStudents = studentsRes.data || []
-      const activeStudentId = studentId || selectedStudentId || nextStudents[0]?.id
-      setStudents(nextStudents)
-      setSelectedStudentId(activeStudentId)
-      setClassReport(reportRes.data)
-      setAlerts(alertsRes.data || [])
+    const nextStudents = studentsRes.data || []
+    const activeStudentId = studentId || selectedStudentId || nextStudents[0]?.id
+    setStudents(nextStudents)
+    setSelectedStudentId(activeStudentId)
+    setClassReport(reportRes.data)
+    setAlerts(alertsRes.data || [])
 
-      if (activeStudentId) {
-        const masteryRes = await analyticsAPI.getStudentMastery(activeStudentId, courseId).catch(() => ({ data: [] }))
-        setMastery(mapMastery(masteryRes.data || []))
-      } else {
-        setMastery([])
-      }
-    } finally {
-      setLoading(false)
+    if (activeStudentId) {
+      await loadStudentSlice(courseId, activeStudentId)
+    } else {
+      setMastery([])
+      setWeakPoints([])
     }
   }
 
@@ -158,19 +150,38 @@ export default function Analytics() {
     if (!user) return
     const activeCourseId = courseId || selectedCourseId || courses[0]?.id
     if (!activeCourseId) return
-    if (isTeacher) await loadTeacherAnalytics(activeCourseId, studentId)
-    else await loadStudentAnalytics(activeCourseId, user.id)
+
+    setLoading(true)
+    setPageError(null)
+    try {
+      if (isTeacher) {
+        await loadTeacherAnalytics(activeCourseId, studentId)
+      } else if (user.id) {
+        await loadStudentSlice(activeCourseId, user.id)
+      }
+    } catch (error) {
+      setPageError(getErrorMessage(error, '学情数据加载失败'))
+      setMastery([])
+      setWeakPoints([])
+      setAlerts([])
+      setClassReport(null)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
     const bootstrap = async () => {
-      const { data } = await courseAPI.list().catch(() => ({ data: [] }))
-      setCourses(data)
-      const firstId = data?.[0]?.id
-      if (firstId) {
-        setSelectedCourseId(firstId)
-        if (isTeacher) await loadTeacherAnalytics(firstId)
-        else await loadStudentAnalytics(firstId, user?.id)
+      try {
+        const { data } = await courseAPI.list()
+        setCourses(data || [])
+        const firstId = data?.[0]?.id
+        if (firstId) {
+          setSelectedCourseId(firstId)
+          await loadData(firstId)
+        }
+      } catch (error) {
+        setPageError(getErrorMessage(error, '课程列表加载失败'))
       }
     }
     void bootstrap()
@@ -207,11 +218,13 @@ export default function Analytics() {
               value={selectedStudentId}
               onChange={(value) => {
                 setSelectedStudentId(value)
-                if (selectedCourseId && value) void loadTeacherAnalytics(selectedCourseId, value)
+                if (selectedCourseId) void loadData(selectedCourseId, value)
               }}
             />
           </Space>
         </Space>
+
+        {pageError && <Alert type="error" showIcon style={{ marginBottom: 16 }} message={pageError} />}
 
         <Row gutter={[16, 16]}>
           <Col xs={24} sm={8}>
@@ -249,24 +262,47 @@ export default function Analytics() {
           </Col>
         </Row>
 
-        <Card title={<span><AlertOutlined style={{ color: '#ff4d4f', marginRight: 6 }} />学习预警</span>} loading={loading} style={{ marginTop: 16, borderRadius: 8 }}>
-          {alerts.length === 0 ? <Empty description="暂无预警信息" /> : (
-            <List
-              dataSource={alerts}
-              renderItem={(item) => (
-                <List.Item>
-                  <Alert
-                    type={alertType(item)}
-                    showIcon
-                    message={`学生 ${item.student_id ?? ''}：${item.details?.knowledge_unit_name || item.title || '知识点预警'}`}
-                    description={item.message || item.content || '暂无详细说明'}
-                    style={{ width: '100%' }}
-                  />
-                </List.Item>
+        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          <Col xs={24} lg={10}>
+            <Card title="当前薄弱点" loading={loading} style={{ borderRadius: 8 }}>
+              {weakPoints.length === 0 ? (
+                <Empty description="暂无薄弱点" />
+              ) : (
+                <List
+                  dataSource={weakPoints}
+                  renderItem={(item) => (
+                    <List.Item>
+                      <div style={{ width: '100%' }}>
+                        <div style={{ fontWeight: 600 }}>{item.name}</div>
+                        <div style={{ color: '#666' }}>掌握度 {Math.round(item.mastery_score * 100)}% · 作答次数 {item.attempt_count}</div>
+                      </div>
+                    </List.Item>
+                  )}
+                />
               )}
-            />
-          )}
-        </Card>
+            </Card>
+          </Col>
+          <Col xs={24} lg={14}>
+            <Card title={<span><AlertOutlined style={{ color: '#ff4d4f', marginRight: 6 }} />学习预警</span>} loading={loading} style={{ borderRadius: 8 }}>
+              {alerts.length === 0 ? <Empty description="暂无预警信息" /> : (
+                <List
+                  dataSource={alerts}
+                  renderItem={(item) => (
+                    <List.Item>
+                      <Alert
+                        type={alertType(item)}
+                        showIcon
+                        message={`学生 ${item.student_id ?? ''} · ${item.details?.knowledge_unit_name || '知识点预警'}`}
+                        description={item.message || '暂无详细说明'}
+                        style={{ width: '100%' }}
+                      />
+                    </List.Item>
+                  )}
+                />
+              )}
+            </Card>
+          </Col>
+        </Row>
       </div>
     )
   }
@@ -277,6 +313,8 @@ export default function Analytics() {
         <Typography.Title level={4} style={{ margin: 0 }}>我的学情</Typography.Title>
         {courseSelect}
       </Space>
+
+      {pageError && <Alert type="error" showIcon style={{ marginBottom: 16 }} message={pageError} />}
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={10}>
@@ -290,24 +328,29 @@ export default function Analytics() {
           </Card>
         </Col>
         <Col xs={24} lg={14}>
-          <Card title={<span><AlertOutlined style={{ color: '#ff4d4f', marginRight: 6 }} />学习预警</span>} loading={loading} style={{ borderRadius: 8 }}>
-            {alerts.length === 0 ? (
-              <Empty description="暂无预警信息" />
+          <Card title="当前薄弱点与预警" loading={loading} style={{ borderRadius: 8 }}>
+            {weakPoints.length === 0 && alerts.length === 0 ? (
+              <Empty description="暂无薄弱点或预警" />
             ) : (
-              <List
-                dataSource={alerts}
-                renderItem={(item) => (
-                  <List.Item>
-                    <Alert
-                      type={alertType(item)}
-                      showIcon
-                      message={item.details?.knowledge_unit_name || item.title || '学习提醒'}
-                      description={item.message || item.content || '暂无详细说明'}
-                      style={{ width: '100%' }}
-                    />
-                  </List.Item>
+              <div style={{ display: 'grid', gap: 12 }}>
+                {weakPoints.length > 0 && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message="薄弱点"
+                    description={weakPoints.map((item) => `${item.name}（掌握度 ${Math.round(item.mastery_score * 100)}%）`).join('；')}
+                  />
                 )}
-              />
+                {alerts.map((item) => (
+                  <Alert
+                    key={item.id}
+                    type={alertType(item)}
+                    showIcon
+                    message={item.details?.knowledge_unit_name || '学习提醒'}
+                    description={item.message || '暂无详细说明'}
+                  />
+                ))}
+              </div>
             )}
           </Card>
         </Col>
