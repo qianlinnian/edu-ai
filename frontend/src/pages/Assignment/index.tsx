@@ -7,7 +7,7 @@ import {
   ArrowLeftOutlined, CodeOutlined, EyeOutlined, PlusOutlined, RobotOutlined, SendOutlined, UploadOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { assignmentAPI, courseAPI, getErrorMessage } from '../../services/api'
+import { assignmentAPI, courseAPI, getCourseAgentCapability, getErrorMessage, type CourseAgentCapability } from '../../services/api'
 import { useAuthStore } from '../../hooks/useAuthStore'
 
 type Course = { id: number; name: string; code: string; domain: string; description?: string | null }
@@ -58,6 +58,7 @@ export default function Assignment() {
   const [submitFile, setSubmitFile] = useState<File | undefined>()
   const [submitting, setSubmitting] = useState(false)
   const [createForm] = Form.useForm()
+  const [agentCapability, setAgentCapability] = useState<CourseAgentCapability | null>(null)
 
   const courseOptions = useMemo(
     () => courses.map((course) => ({ value: course.id, label: `${course.name}（${course.code}）` })),
@@ -91,7 +92,12 @@ export default function Assignment() {
     try {
       const { data: courseData } = await courseAPI.list()
       setCourses(courseData)
+      const nextCourseId = selectedCourseId ?? courseData[0]?.id
       if (courseData.length && !selectedCourseId) setSelectedCourseId(courseData[0].id)
+      if (nextCourseId) {
+        const capability = await getCourseAgentCapability(nextCourseId)
+        setAgentCapability(capability)
+      }
       await loadAssignments(courseData)
     } catch (error) {
       message.error(getErrorMessage(error, '作业数据加载失败'))
@@ -128,6 +134,10 @@ export default function Assignment() {
   }
 
   const handleTeacherAIClick = async (assignment: AssignmentItem) => {
+    if (agentCapability && !agentCapability.hasGrading) {
+      message.warning('当前课程 Agent 未启用作业批改节点')
+      return
+    }
     message.info('学生提交后会自动进入 AI 批改流程，可在提交列表中查看批改进度。')
     await openAssignmentDetail(assignment)
   }
@@ -165,6 +175,9 @@ export default function Assignment() {
     if (submitMode === 'file' && !submitFile) {
       message.warning('请先选择上传文件')
       return
+    }
+    if (agentCapability && !agentCapability.hasGrading) {
+      message.info('当前课程未启用 AI 批改节点，本次提交仍会进入作业提交流程，但不应对外表述为完整 AI 批改闭环。')
     }
     setSubmitting(true)
     try {
@@ -249,6 +262,16 @@ export default function Assignment() {
         {detailContent(selectedAssignment)}
       </Card>
 
+      {agentCapability && !agentCapability.hasGrading && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="当前课程 Agent 未启用作业批改节点"
+          description="按当前配置口径，本课程不提供 AI 批改主功能。若需要演示该能力，请先在 Agent 构建器中加入“作业批改”节点并重新发布。"
+        />
+      )}
+
       {isTeacher ? (
         <Alert
           type="info"
@@ -266,6 +289,9 @@ export default function Assignment() {
             <Button type="primary" icon={<SendOutlined />} onClick={() => setSubmitOpen(selectedAssignment)}>
               提交作业
             </Button>
+            {!agentCapability?.hasGrading && (
+              <Tag color="warning">当前课程未启用 AI 批改</Tag>
+            )}
           </Space>
         </Card>
       )}
@@ -340,15 +366,31 @@ export default function Assignment() {
     { title: '满分', dataIndex: 'max_score', render: (score: number) => `${score} 分` },
     {
       title: '操作',
-      render: (_: unknown, row: AssignmentItem) => isTeacher ? (
+          render: (_: unknown, row: AssignmentItem) => isTeacher ? (
         <Space>
           <Button size="small" onClick={() => void openAssignmentDetail(row)}>查看提交</Button>
-          <Button size="small" icon={<RobotOutlined />} type="primary" ghost onClick={() => void handleTeacherAIClick(row)}>查看批改进度</Button>
+          <Button
+            size="small"
+            icon={<RobotOutlined />}
+            type="primary"
+            ghost
+            disabled={agentCapability ? !agentCapability.hasGrading : false}
+            onClick={() => void handleTeacherAIClick(row)}
+          >
+            查看批改进度
+          </Button>
         </Space>
       ) : (
         <Space>
           <Button size="small" icon={<EyeOutlined />} onClick={() => void openAssignmentDetail(row)}>查看详情</Button>
-          <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => setSubmitOpen(row)}>提交作业</Button>
+          <Button
+            size="small"
+            type="primary"
+            icon={<SendOutlined />}
+            onClick={() => setSubmitOpen(row)}
+          >
+            提交作业
+          </Button>
         </Space>
       ),
     },
@@ -364,7 +406,14 @@ export default function Assignment() {
           style={{ width: 260 }}
           options={courseOptions}
           value={selectedCourseId}
-          onChange={setSelectedCourseId}
+          onChange={(value) => {
+            setSelectedCourseId(value)
+            if (value) {
+              void getCourseAgentCapability(value).then(setAgentCapability).catch(() => setAgentCapability(null))
+            } else {
+              setAgentCapability(null)
+            }
+          }}
         />
         {isTeacher && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>创建作业</Button>}
       </Space>
@@ -465,7 +514,7 @@ function SubmitModal({
               onRemove={() => onFileChange(undefined)}
             >
               <p style={{ fontSize: 24 }}><UploadOutlined /></p>
-              <p>点击或拖拽上传 .py / .txt / .md / .pdf / .docx / .pptx / .xlsx / .csv / .json</p>
+              <p>点击或拖拽上传</p>
             </Upload.Dragger>
           ),
         },

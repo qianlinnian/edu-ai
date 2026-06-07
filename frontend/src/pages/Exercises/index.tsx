@@ -16,7 +16,7 @@ import {
   message,
 } from 'antd'
 import { FireOutlined, ReloadOutlined, TrophyOutlined } from '@ant-design/icons'
-import { courseAPI, exerciseAPI, getErrorMessage } from '../../services/api'
+import { courseAPI, exerciseAPI, getCourseAgentCapability, getErrorMessage, type CourseAgentCapability } from '../../services/api'
 import { useAuthStore } from '../../hooks/useAuthStore'
 
 type CourseItem = {
@@ -39,6 +39,7 @@ type ExerciseItem = {
   options?: Array<ExerciseOption | string> | null
   difficulty?: number
   knowledge_point_ids?: number[]
+  knowledge_point_names?: string[]
   generated_exercise_id?: number
 }
 
@@ -72,6 +73,17 @@ type ExerciseMode = 'pool' | 'personalized'
 const difficultyLabel = (value?: number) => '⭐'.repeat(Math.min(Math.max(Number(value || 1), 1), 5))
 
 const itemKey = (item: ExerciseItem) => `${item.source || 'pool'}-${item.generated_exercise_id || item.id}`
+
+const normalizePoolExercise = (item: ExerciseItem): ExerciseItem => ({
+  ...item,
+  source: 'pool',
+})
+
+const visibleKnowledgePointLabels = (item?: ExerciseItem) => {
+  const names = (item?.knowledge_point_names || []).filter(Boolean)
+  if (names.length > 0) return names.slice(0, 3)
+  return (item?.knowledge_point_ids || []).slice(0, 3).map((value) => `知识点 ${value}`)
+}
 
 const normalizeOptions = (options?: ExerciseItem['options']) => {
   if (!Array.isArray(options)) return []
@@ -114,6 +126,7 @@ export default function Exercises() {
   const [notice, setNotice] = useState<string | null>(null)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [results, setResults] = useState<Record<string, AttemptResult>>({})
+  const [agentCapability, setAgentCapability] = useState<CourseAgentCapability | null>(null)
 
   const activeItems = mode === 'personalized' ? generatedExercises : poolExercises
   const currentItem = activeItems[currentIndex]
@@ -153,7 +166,7 @@ export default function Exercises() {
     setPageError(null)
     try {
       const { data } = await exerciseAPI.listPool(courseId)
-      setPoolExercises(data || [])
+      setPoolExercises(((data || []) as ExerciseItem[]).map(normalizePoolExercise))
       if (mode === 'pool') {
         setCurrentIndex(0)
         setAnswerDraft('')
@@ -173,6 +186,16 @@ export default function Exercises() {
     }
   }
 
+  const loadAgentCapability = async (courseId: number) => {
+    try {
+      const capability = await getCourseAgentCapability(courseId)
+      setAgentCapability(capability)
+    } catch (error) {
+      setAgentCapability(null)
+      setPageError(getErrorMessage(error, '课程 Agent 能力加载失败'))
+    }
+  }
+
   const loadCourses = async () => {
     try {
       const { data } = await courseAPI.list()
@@ -184,6 +207,7 @@ export default function Exercises() {
         : nextCourses[0]?.id
       setSelectedCourseId(preferredId)
       if (preferredId) {
+        await loadAgentCapability(preferredId)
         await loadPoolExercises(preferredId)
       }
     } catch (error) {
@@ -199,12 +223,17 @@ export default function Exercises() {
     setSelectedCourseId(value)
     setGeneratedExercises([])
     resetSession('pool')
+    await loadAgentCapability(value)
     await loadPoolExercises(value)
   }
 
   const handleGenerate = async () => {
     if (!selectedCourseId) {
       message.warning('请先选择课程')
+      return
+    }
+    if (agentCapability && !agentCapability.hasExercise) {
+      message.warning('当前课程未发布个性化练习生成能力')
       return
     }
     setGenerating(true)
@@ -254,9 +283,12 @@ export default function Exercises() {
 
     setSubmitting(true)
     try {
+      const isPoolItem = mode === 'pool' || currentItem.source === 'pool'
       const { data } = await exerciseAPI.attempt({
-        exercise_id: currentItem.source === 'pool' ? currentItem.id : undefined,
-        generated_exercise_id: currentItem.generated_exercise_id || (currentItem.source === 'generated' ? currentItem.id : undefined),
+        exercise_id: isPoolItem ? currentItem.id : undefined,
+        generated_exercise_id: isPoolItem
+          ? undefined
+          : currentItem.generated_exercise_id || (currentItem.source === 'generated' ? currentItem.id : undefined),
         student_answer: answerDraft.trim(),
       })
       setAnswers((prev) => ({ ...prev, [currentKey]: answerDraft.trim() }))
@@ -309,7 +341,12 @@ export default function Exercises() {
               重新开始本轮
             </Button>
             {isStudent && (
-              <Button type="primary" icon={<FireOutlined />} onClick={() => void handleGenerate()}>
+              <Button
+                type="primary"
+                icon={<FireOutlined />}
+                onClick={() => void handleGenerate()}
+                disabled={agentCapability ? !agentCapability.hasExercise : false}
+              >
                 再生成一组
               </Button>
             )}
@@ -343,7 +380,13 @@ export default function Exercises() {
             查看课程题库
           </Button>
           {isStudent && (
-            <Button type="primary" icon={<FireOutlined />} onClick={() => void handleGenerate()} loading={generating}>
+            <Button
+              type="primary"
+              icon={<FireOutlined />}
+              onClick={() => void handleGenerate()}
+              loading={generating}
+              disabled={agentCapability ? !agentCapability.hasExercise : false}
+            >
               生成个性化练习
             </Button>
           )}
@@ -361,6 +404,15 @@ export default function Exercises() {
       )}
 
       {pageError && <Alert type="error" showIcon message={pageError} style={{ marginBottom: 16 }} />}
+      {agentCapability && !agentCapability.hasExercise && (
+        <Alert
+          type="info"
+          showIcon
+          message="当前课程未发布个性化练习生成能力"
+          description="课程题库浏览和现有题目作答仍可使用，但已发布 Agent workflow 不包含“练习生成”节点，因此后端不会开放个性化练习生成。若需要使用，请先在 Agent 构建器中加入该节点并重新发布。"
+          style={{ marginBottom: 16 }}
+        />
+      )}
       {notice && (
         <Alert
           type={notice.includes('兜底题') ? 'warning' : 'info'}
@@ -398,8 +450,8 @@ export default function Exercises() {
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <Typography.Text strong>第 {currentIndex + 1} 题 / 共 {activeItems.length} 题</Typography.Text>
               <Space size={8} wrap>
-                {(currentItem.knowledge_point_ids || []).slice(0, 3).map((item) => (
-                  <Tag key={item}>知识点 {item}</Tag>
+                {visibleKnowledgePointLabels(currentItem).map((item) => (
+                  <Tag key={item}>{item}</Tag>
                 ))}
               </Space>
             </div>
@@ -455,7 +507,7 @@ export default function Exercises() {
               <Alert
                 type={currentResult.is_correct ? 'success' : 'warning'}
                 showIcon
-                message={currentResult.is_correct ? `回答正确 · 得分 ${currentResult.score}` : `已提交 · 得分 ${currentResult.score}`}
+                message={currentResult.is_correct ? `回答正确` : `回答错误`}
                 description={currentResult.feedback}
               />
             )}

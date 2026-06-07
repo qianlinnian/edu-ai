@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alert, Card, Col, Empty, List, Row, Select, Skeleton, Space, Statistic, Tag, Typography } from 'antd'
 import { AlertOutlined, BarChartOutlined, TeamOutlined, WarningOutlined } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
-import { analyticsAPI, courseAPI, getErrorMessage } from '../../services/api'
+import { analyticsAPI, courseAPI, getCourseAgentCapability, getErrorMessage, type CourseAgentCapability } from '../../services/api'
 import { useAuthStore } from '../../hooks/useAuthStore'
 
 type Course = { id: number; name: string; code: string }
@@ -106,11 +106,11 @@ export default function Analytics() {
   const [mastery, setMastery] = useState<{ label: string; value: number }[]>([])
   const [weakPoints, setWeakPoints] = useState<WeakPointItem[]>([])
   const [classReport, setClassReport] = useState<ClassReport | null>(null)
-  const [alerts, setAlerts] = useState<AlertItem[]>([])
   const [studentAlerts, setStudentAlerts] = useState<AlertItem[]>([])
   const [classAlerts, setClassAlerts] = useState<AlertItem[]>([])
   const [loading, setLoading] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
+  const [agentCapability, setAgentCapability] = useState<CourseAgentCapability | null>(null)
 
   const radarOption = useMemo(() => buildRadarOption(mastery), [mastery])
   const classBarOption = useMemo(() => buildClassBarOption(classReport?.by_knowledge_unit || []), [classReport])
@@ -163,6 +163,17 @@ export default function Analytics() {
     setLoading(true)
     setPageError(null)
     try {
+      const capability = await getCourseAgentCapability(activeCourseId)
+      setAgentCapability(capability)
+      if (!capability.hasAnalytics) {
+        setMastery([])
+        setWeakPoints([])
+        setStudentAlerts([])
+        setClassAlerts([])
+        setClassReport(null)
+        setStudents([])
+        return
+      }
       if (isTeacher) {
         await loadTeacherAnalytics(activeCourseId, studentId)
       } else if (user.id) {
@@ -172,7 +183,8 @@ export default function Analytics() {
       setPageError(getErrorMessage(error, '学情数据加载失败'))
       setMastery([])
       setWeakPoints([])
-      setAlerts([])
+      setStudentAlerts([])
+      setClassAlerts([])
       setClassReport(null)
     } finally {
       setLoading(false)
@@ -234,6 +246,15 @@ export default function Analytics() {
         </Space>
 
         {pageError && <Alert type="error" showIcon style={{ marginBottom: 16 }} message={pageError} />}
+        {agentCapability && !agentCapability.hasAnalytics && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="当前课程未发布学情分析能力"
+            description="当前课程的已发布 Agent workflow 不包含“学情分析”节点，因此后端不会开放该主功能。若需要使用，请先在 Agent 构建器中加入“学情分析”节点并重新发布。"
+          />
+        )}
 
         <Row gutter={[16, 16]}>
           <Col xs={24} sm={8}>
@@ -326,6 +347,15 @@ export default function Analytics() {
       </Space>
 
       {pageError && <Alert type="error" showIcon style={{ marginBottom: 16 }} message={pageError} />}
+      {agentCapability && !agentCapability.hasAnalytics && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="当前课程未发布学情分析能力"
+          description="当前课程的已发布 Agent workflow 不包含“学情分析”节点，因此后端不会开放该主功能。若需要使用，请先在 Agent 构建器中加入“学情分析”节点并重新发布。"
+        />
+      )}
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={10}>
@@ -340,7 +370,7 @@ export default function Analytics() {
         </Col>
         <Col xs={24} lg={14}>
           <Card title="当前薄弱点与预警" loading={loading} style={{ borderRadius: 8 }}>
-            {weakPoints.length === 0 && alerts.length === 0 ? (
+            {weakPoints.length === 0 && studentAlerts.length === 0 ? (
               <Empty description="暂无薄弱点或预警" />
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>
@@ -352,7 +382,7 @@ export default function Analytics() {
                     description={weakPoints.map((item) => `${item.name}（掌握度 ${Math.round(item.mastery_score * 100)}%）`).join('；')}
                   />
                 )}
-                {alerts.map((item) => (
+                {studentAlerts.map((item) => (
                   <Alert
                     key={item.id}
                     type={alertType(item)}

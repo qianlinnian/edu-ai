@@ -7,7 +7,16 @@ import {
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { agentAPI, chatAPI, courseAPI, fetchSSE, createAbortController, getErrorMessage } from '../../services/api'
+import {
+  agentAPI,
+  chatAPI,
+  courseAPI,
+  fetchSSE,
+  createAbortController,
+  getCourseAgentCapability,
+  getErrorMessage,
+  type CourseAgentCapability,
+} from '../../services/api'
 import { useSessionStore, type PersistedMessage } from '../../hooks/useChatSession'
 
 // ===== 类型 =====
@@ -58,6 +67,7 @@ export default function Chat() {
   const [loadingAgents, setLoadingAgents] = useState(false)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [agentCapability, setAgentCapability] = useState<CourseAgentCapability | null>(null)
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const loadingMsgIdRef = useRef<number>(0)
@@ -74,9 +84,17 @@ export default function Chat() {
   )
 
   const selectedAgent = useMemo(
-    () => agents.find((a) => a.is_active) ?? agents[0] ?? null,
+    () => agents.find((a) => a.is_active) ?? null,
     [agents]
   )
+
+  const resetMissingServerSession = useCallback((localId: number) => {
+    updateSession(localId, (session) => ({
+      ...session,
+      localId: Date.now(),
+      serverSessionId: undefined,
+    }))
+  }, [updateSession])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -104,12 +122,16 @@ export default function Chat() {
     if (!selectedCourseItem) return
 
     setLoadingAgents(true)
+    void getCourseAgentCapability(selectedCourseItem.id)
+      .then(setAgentCapability)
+      .catch(() => setAgentCapability(null))
     agentAPI
       .listInstances(selectedCourseItem.id)
       .then(({ data }) => setAgents(data))
       .catch((err: unknown) => {
         message.error(getErrorMessage(err, '加载 Agent 列表失败，请检查后端服务是否正常运行'))
         setAgents([])
+        setAgentCapability(null)
       })
       .finally(() => setLoadingAgents(false))
 
@@ -118,25 +140,40 @@ export default function Chat() {
       .then(({ data }: { data: ServerSession[] }) => {
         // 从 store 实时读取，防止闭包旧值
         const currentSessions = useSessionStore.getState().sessions
-        const serverIds = new Set(data.map((s) => s.id))
+        const currentActiveId = useSessionStore.getState().activeId
+        const existingServerSessions = new Map(
+          currentSessions
+            .filter((s) => s.courseId === selectedCourseItem.id && s.serverSessionId !== undefined)
+            .map((s) => [s.serverSessionId as number, s])
+        )
 
         // 保留其他课程的会话 + 本课程的本地会话 + 本课程的服务器会话
         const merged = [
           ...currentSessions.filter((s) => s.courseId !== selectedCourseItem.id),
           ...currentSessions.filter(
-            (s) => s.courseId === selectedCourseItem.id && !serverIds.has(Math.abs(s.localId))
+            (s) => s.courseId === selectedCourseItem.id && s.serverSessionId === undefined
           ),
           ...data.map((s) => ({
-            localId: -s.id,
+            ...(existingServerSessions.get(s.id) ?? {}),
+            localId: existingServerSessions.get(s.id)?.localId ?? -s.id,
             serverSessionId: s.id,
             title: s.title,
             courseId: s.course_id,
             courseName: selectedCourseItem.name,
-            messages: [] as PersistedMessage[],
+            messages: existingServerSessions.get(s.id)?.messages ?? [] as PersistedMessage[],
           })),
         ]
 
         setStoreSessions(merged)
+
+        const activeSessionStillExists =
+          currentActiveId !== null &&
+          merged.some((session) => session.localId === currentActiveId && session.courseId === selectedCourseItem.id)
+
+        if (activeSessionStillExists) {
+          setActiveId(currentActiveId)
+          return
+        }
 
         const localOfThisCourse = merged.filter(
           (s) => s.courseId === selectedCourseItem.id && s.serverSessionId === undefined
@@ -175,7 +212,7 @@ export default function Chat() {
           messages: [{ id: Date.now(), role: 'assistant', content: '加载历史消息失败，请刷新重试。' }],
         })
       })
-  }, [activeId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeId, storeRemoveSession]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const createSession = useCallback(() => {
     if (!selectedCourseItem) return
@@ -225,9 +262,13 @@ export default function Chat() {
     const coursesNow = courses
     const agentsNow = agents
     const selCourse = coursesNow.find((c) => c.id === selectedCourse)
-    const selAgent = agentsNow.find((a) => a.is_active) ?? agentsNow[0] ?? null
+    const selAgent = agentsNow.find((a) => a.is_active) ?? null
     if (!selCourse || !selAgent) {
       message.warning(!selCourse ? '请先选择课程' : '当前课程还没有可用答疑 Agent，请先在 Agent Builder 中创建')
+      return
+    }
+    if (agentCapability && !agentCapability.canChat) {
+      message.warning('当前课程没有已发布的问答 Agent 能力，请先发布包含 input/llm/output 的工作流。')
       return
     }
     if (sending) return
@@ -288,6 +329,12 @@ export default function Chat() {
           setSending(false)
         },
         onError: (detail: string) => {
+          if (/session not found/i.test(detail)) {
+            const sid = useSessionStore.getState().activeId
+            if (sid !== null) {
+              resetMissingServerSession(sid)
+            }
+          }
           const isConfigError =
             (detail && /api.?key|api.?key未配置|API.?key|未设置|not configured/i.test(detail)) ||
             (detail &&
@@ -330,7 +377,7 @@ export default function Chat() {
       abortControllerRef.current.signal,
       10_000
     )
-  }, [input, sending])
+  }, [input, sending, resetMissingServerSession, agentCapability])
 
   // 清理
   useEffect(() => {
@@ -365,6 +412,7 @@ export default function Chat() {
             value={selectedCourse}
             onChange={(val) => {
               setSelectedCourse(val)
+              if (!val) setAgentCapability(null)
               setActiveId(null)
             }}
             options={courses.map((c) => ({ value: c.id, label: `${c.name} (${c.code})` }))}

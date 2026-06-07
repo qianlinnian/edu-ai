@@ -6,6 +6,30 @@ const api = axios.create({
   timeout: 30000,
 })
 
+const MODEL_PROVIDER_MAP: Record<string, string> = {
+  'qwen-max': 'dashscope',
+  'qwen-vl-max': 'dashscope',
+  'text-embedding-v3': 'dashscope',
+  'glm-4': 'zhipu',
+  'deepseek-chat': 'deepseek',
+  'deepseek-reasoner': 'deepseek',
+}
+
+const MODEL_PROVIDER_PREFIX_MAP: Record<string, string> = {
+  qwen: 'dashscope',
+  glm: 'zhipu',
+  deepseek: 'deepseek',
+}
+
+function inferProviderFromModel(model: string): string {
+  const normalized = String(model || '').trim().toLowerCase()
+  if (MODEL_PROVIDER_MAP[normalized]) return MODEL_PROVIDER_MAP[normalized]
+  for (const [prefix, provider] of Object.entries(MODEL_PROVIDER_PREFIX_MAP)) {
+    if (normalized.startsWith(prefix)) return provider
+  }
+  return 'dashscope'
+}
+
 type RequestConfig = {
   headers?: Record<string, string>
   params?: Record<string, unknown>
@@ -298,6 +322,11 @@ export const agentAPI = {
   publishWorkflow: (id: number) => api.post(`/agents/workflows/${id}/publish`),
   saveAndPublish: async (nodes: any[], edges: any[], agentName: string, courseId: number = 3) => {
     const workflowDAG = { nodes, edges }
+    const existingAgentsRes = await api.get('/agents/instances', { params: { course_id: courseId } })
+    const existingAgent = existingAgentsRes.data.find((item: any) => item.is_active) ?? existingAgentsRes.data[0] ?? null
+    const llmNode = (nodes as any[]).find((node) => String(node?.data?.nodeType || '') === 'llm_node')
+    const llmModel = String(llmNode?.data?.model || 'qwen-max')
+    const llmProvider = inferProviderFromModel(llmModel)
 
     const instanceData = {
       template_id: null,
@@ -307,11 +336,13 @@ export const agentAPI = {
       system_prompt: '你是一个智能教学助手，负责回答课程相关问题。',
       config: {},
       tools: [],
-      llm_provider: 'dashscope',
-      llm_model: 'qwen-max',
+      llm_provider: llmProvider,
+      llm_model: llmModel,
     }
 
-    const instanceRes = await api.post('/agents/instances', instanceData)
+    const instanceRes = existingAgent
+      ? await api.put(`/agents/instances/${existingAgent.id}`, instanceData)
+      : await api.post('/agents/instances', instanceData)
     const agentId = instanceRes.data.id
 
     const workflowData = {
@@ -327,11 +358,90 @@ export const agentAPI = {
   },
 }
 
+export type AgentCapabilityNodeType =
+  | 'input_node'
+  | 'rag_node'
+  | 'llm_node'
+  | 'output_node'
+  | 'grading_node'
+  | 'analytics_node'
+  | 'exercise_node'
+  | 'condition_node'
+
+export type CourseAgentCapability = {
+  courseId: number
+  agentId: number | null
+  workflowId: number | null
+  agentName: string | null
+  enabledNodeTypes: AgentCapabilityNodeType[]
+  canChat: boolean
+  hasRag: boolean
+  hasGrading: boolean
+  hasAnalytics: boolean
+  hasExercise: boolean
+}
+
+function emptyCourseAgentCapability(courseId: number): CourseAgentCapability {
+  return {
+    courseId,
+    agentId: null,
+    workflowId: null,
+    agentName: null,
+    enabledNodeTypes: [],
+    canChat: false,
+    hasRag: false,
+    hasGrading: false,
+    hasAnalytics: false,
+    hasExercise: false,
+  }
+}
+
+export async function getCourseAgentCapability(courseId: number, authToken?: string): Promise<CourseAgentCapability> {
+  const { data: agents } = await agentAPI.listInstances(courseId, authToken)
+  const activeAgent = agents.find((item: any) => item.is_active) ?? null
+
+  if (!activeAgent) {
+    return emptyCourseAgentCapability(courseId)
+  }
+
+  const { data: workflows } = await agentAPI.listWorkflows(activeAgent.id)
+  const activeWorkflow = workflows.find((item: any) => item.is_active) ?? null
+  if (!activeWorkflow) {
+    return emptyCourseAgentCapability(courseId)
+  }
+  const enabledNodeTypes = Array.from(
+    new Set(
+      ((activeWorkflow?.workflow_dag?.nodes || []) as any[])
+        .map((node) => String(node?.data?.nodeType || '').trim())
+        .filter(Boolean)
+    )
+  ) as AgentCapabilityNodeType[]
+
+  const hasNode = (nodeType: AgentCapabilityNodeType) => enabledNodeTypes.includes(nodeType)
+  const canChat =
+    hasNode('input_node') &&
+    hasNode('llm_node') &&
+    hasNode('output_node')
+
+  return {
+    courseId,
+    agentId: activeAgent.id,
+    workflowId: activeWorkflow?.id ?? null,
+    agentName: activeAgent.name ?? null,
+    enabledNodeTypes,
+    canChat,
+    hasRag: hasNode('rag_node'),
+    hasGrading: hasNode('grading_node'),
+    hasAnalytics: hasNode('analytics_node'),
+    hasExercise: hasNode('exercise_node'),
+  }
+}
+
 export const platformAPI = {
   listConnections: () => api.get('/platform/connections'),
   createConnection: (data: any) => api.post('/platform/connections', data),
-  launchChaoxing: (data: { course_id: number; launch_ticket: string; role: 'student' | 'teacher' | 'assistant' }) =>
+  launchChaoxing: (data: { course_id: number; launch_ticket: string; role: 'student' | 'teacher' }) =>
     api.post('/platform/chaoxing/lti-launch', data),
-  dingtalkAuth: (params: { code: string; course_id: number; role: 'student' | 'teacher' | 'assistant' }) =>
+  dingtalkAuth: (params: { code: string; course_id: number; role: 'student' | 'teacher' }) =>
     api.get('/platform/dingtalk/auth', { params }),
 }
