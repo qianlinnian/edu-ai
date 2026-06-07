@@ -22,7 +22,6 @@ type CourseOption = {
 const ROLE_OPTIONS = [
   { value: 'student', label: 'student' },
   { value: 'teacher', label: 'teacher' },
-  { value: 'assistant', label: 'assistant' },
 ]
 
 export default function PlatformConfig() {
@@ -53,7 +52,7 @@ export default function PlatformConfig() {
   }, [])
 
   const widgetTemplate = useMemo(
-    () => `/widget/chat?course=${selectedCourse ?? '{course_id}'}&token={backend_embed_token}`,
+    () => `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'}/widget/chat?course=${selectedCourse ?? '{course_id}'}&token={backend_embed_token}`,
     [selectedCourse]
   )
 
