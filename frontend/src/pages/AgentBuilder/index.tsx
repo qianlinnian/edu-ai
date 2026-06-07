@@ -14,7 +14,7 @@ import ReactFlow, {
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { Alert, Button, Drawer, Form, Input, Select, Tag, message } from 'antd'
-import { EyeOutlined, PlayCircleOutlined, SaveOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EyeOutlined, PlayCircleOutlined, SaveOutlined } from '@ant-design/icons'
 import { agentAPI, courseAPI, getErrorMessage } from '../../services/api'
 
 const NODE_TYPES_CONFIG = [
@@ -40,6 +40,7 @@ type CourseItem = {
 type TemplateItem = {
   id: number
   name: string
+  description?: string
 }
 
 type AgentItem = {
@@ -77,6 +78,32 @@ type WorkflowValidation = {
   }
 }
 
+type BuilderNodeType = typeof NODE_TYPES_CONFIG[number]['type']
+
+const MODEL_PROVIDER_MAP: Record<string, string> = {
+  'qwen-max': 'dashscope',
+  'qwen-vl-max': 'dashscope',
+  'text-embedding-v3': 'dashscope',
+  'glm-4': 'zhipu',
+  'deepseek-chat': 'deepseek',
+  'deepseek-reasoner': 'deepseek',
+}
+
+const MODEL_PROVIDER_PREFIX_MAP: Record<string, string> = {
+  qwen: 'dashscope',
+  glm: 'zhipu',
+  deepseek: 'deepseek',
+}
+
+const inferProviderFromModel = (model: string) => {
+  const normalized = String(model || '').trim().toLowerCase()
+  if (MODEL_PROVIDER_MAP[normalized]) return MODEL_PROVIDER_MAP[normalized]
+  for (const [prefix, provider] of Object.entries(MODEL_PROVIDER_PREFIX_MAP)) {
+    if (normalized.startsWith(prefix)) return provider
+  }
+  return 'dashscope'
+}
+
 const INIT_NODES: Node[] = [
   { id: 'n1', type: 'custom', position: { x: 250, y: 40 }, data: { label: '用户输入', color: '#6366f1', icon: 'I', nodeType: 'input_node' } },
   { id: 'n2', type: 'custom', position: { x: 250, y: 160 }, data: { label: '知识检索', color: '#00a8ff', icon: 'R', nodeType: 'rag_node', topK: 5, similarity: 0.7 } },
@@ -90,12 +117,29 @@ const INIT_EDGES: Edge[] = [
   { id: 'e3-4', source: 'n3', target: 'n4', animated: true, style: { stroke: '#52c41a' } },
 ]
 
-function buildDefaultNodes() {
+function buildDefaultNodes(llmModel: string = 'qwen-max', selectedCourse?: number) {
   return INIT_NODES.map((node) => ({
     ...node,
     position: { ...node.position },
-    data: { ...node.data },
+    data: {
+      ...node.data,
+      ...(node.data?.nodeType === 'rag_node' ? { course: selectedCourse ?? node.data?.course } : {}),
+      ...(node.data?.nodeType === 'llm_node' ? { model: llmModel } : {}),
+    },
   }))
+}
+
+function hydrateWorkflowNodes(nodes: Node[], agent: AgentItem, selectedCourse?: number) {
+  return nodes.map((node) => {
+    const nodeType = String(node.data?.nodeType || '')
+    if (nodeType === 'llm_node' && !String(node.data?.model || '').trim()) {
+      return { ...node, data: { ...node.data, model: agent.llm_model || 'qwen-max' } }
+    }
+    if (nodeType === 'rag_node' && !node.data?.course && selectedCourse) {
+      return { ...node, data: { ...node.data, course: selectedCourse } }
+    }
+    return node
+  })
 }
 
 function buildDefaultEdges() {
@@ -104,6 +148,70 @@ function buildDefaultEdges() {
     style: edge.style ? { ...edge.style } : edge.style,
   }))
 }
+
+function buildTemplateNodes(nodeTypes: BuilderNodeType[], selectedCourse?: number) {
+  const uniqueNodeTypes = Array.from(new Set(nodeTypes))
+  const contains = (type: BuilderNodeType) => uniqueNodeTypes.includes(type)
+  const nextNodes: Node[] = []
+  const nextEdges: Edge[] = []
+  const mainChain: BuilderNodeType[] = ['input_node']
+
+  if (contains('rag_node')) mainChain.push('rag_node')
+  mainChain.push('llm_node', 'output_node')
+
+  mainChain.forEach((type, index) => {
+    const meta = NODE_TYPE_META[type]
+    nextNodes.push({
+      id: `tpl-${type}`,
+      type: 'custom',
+      position: { x: 280, y: 60 + index * 120 },
+      data: {
+        label: meta.label,
+        color: meta.color,
+        icon: meta.icon,
+        nodeType: type,
+        ...(type === 'rag_node' ? { topK: 5, similarity: 0.7, course: selectedCourse } : {}),
+        ...(type === 'llm_node' ? { model: 'qwen-max' } : {}),
+      },
+    })
+  })
+
+  for (let index = 0; index < mainChain.length - 1; index += 1) {
+    nextEdges.push({
+      id: `tpl-${mainChain[index]}-${mainChain[index + 1]}`,
+      source: `tpl-${mainChain[index]}`,
+      target: `tpl-${mainChain[index + 1]}`,
+      animated: true,
+      style: { stroke: NODE_TYPE_META[mainChain[index + 1]].color },
+    })
+  }
+
+  const sideNodeTypes = uniqueNodeTypes.filter((type) => !mainChain.includes(type))
+  sideNodeTypes.forEach((type, index) => {
+    const meta = NODE_TYPE_META[type]
+    nextNodes.push({
+      id: `tpl-${type}`,
+      type: 'custom',
+      position: { x: 40 + (index % 2) * 180, y: 120 + Math.floor(index / 2) * 120 },
+      data: {
+        label: meta.label,
+        color: meta.color,
+        icon: meta.icon,
+        nodeType: type,
+      },
+    })
+  })
+
+  return { nodes: nextNodes, edges: nextEdges }
+}
+
+const LOCAL_TEMPLATE_ITEMS: TemplateItem[] = [
+  {
+    id: 0,
+    name: '通用教学模板',
+    description: '包含课程答疑、作业批改、学情分析、练习生成等常见节点；非 QA 节点当前作为前端能力开关。',
+  },
+]
 
 function buildWorkflowPayload(nodes: Node[], edges: Edge[]) {
   return {
@@ -163,7 +271,7 @@ function validateWorkflow(nodes: Node[], edges: Edge[], selectedCourse?: number)
       saveErrors.push(`LLM 节点 ${node.data?.label || node.id} 缺少模型配置`)
     }
     if (NODE_TYPE_META[nodeType] && !NODE_TYPE_META[nodeType].runtimeSupported) {
-      publishErrors.push(`当前运行时不能发布 ${NODE_TYPE_META[nodeType].label} 节点`)
+      warnings.push(`${NODE_TYPE_META[nodeType].label} 节点当前作为前端能力开关保留，不进入 QA 运行时执行`)
     }
   }
 
@@ -240,14 +348,15 @@ function validateWorkflow(nodes: Node[], edges: Edge[], selectedCourse?: number)
   summary.push(`节点数 ${nodes.length} / 连线数 ${edges.length}`)
   summary.push(`节点类型 ${Array.from(typeCounts.entries()).map(([type, count]) => `${type}:${count}`).join(', ') || '无'}`)
   summary.push(`运行时映射 QA 管线: input -> ${ragNode ? 'rag -> ' : ''}llm -> output`)
-  summary.push(`发布后生效方式：将工作流映射到 Agent 配置，不执行通用工作流引擎`)
+  summary.push(`发布后生效方式：将工作流映射到 QA Agent 配置，不执行通用工作流引擎`)
+  summary.push(`当前运行时实际读取：LLM 模型、是否启用 RAG、Top-K；similarity 阈值当前仅随配置保存`)
 
   const uiOnlyNodes = nodes.filter((node) => {
     const nodeType = String(node.data?.nodeType || '')
     return NODE_TYPE_META[nodeType] && !NODE_TYPE_META[nodeType].runtimeSupported
   })
   if (uiOnlyNodes.length > 0) {
-    warnings.push('存在仅 UI 原型节点，可保存但不能发布生效。')
+    warnings.push('存在 UI 能力节点：它们可以随 Agent 一起发布，用于前端功能开关，但不会被 QA 运行时逐节点执行。')
   }
   if (nodes.some((node) => !RUNTIME_NODE_TYPES.includes(String(node.data?.nodeType || '')))) {
     warnings.push('当前运行时只支持 input/rag/llm/output 四类节点的发布映射。')
@@ -271,6 +380,7 @@ function CustomNode({ data }: { data: any }) {
         display: 'flex',
         alignItems: 'center',
         gap: 8,
+        cursor: 'grab',
       }}
     >
       <Handle type="target" position={Position.Top} style={{ background: data.color, width: 10, height: 10 }} />
@@ -312,6 +422,15 @@ export default function AgentBuilder() {
   const [form] = Form.useForm()
 
   const validation = useMemo(() => validateWorkflow(nodes, edges, selectedCourse), [edges, nodes, selectedCourse])
+  const templateOptions = useMemo(() => [...LOCAL_TEMPLATE_ITEMS, ...templates], [templates])
+  const selectedTemplateItem = useMemo(
+    () => templateOptions.find((item) => item.id === selectedTemplate) ?? null,
+    [selectedTemplate, templateOptions]
+  )
+  const enabledNodeTypes = useMemo(
+    () => Array.from(new Set(nodes.map((node) => String(node.data?.nodeType || '')).filter(Boolean))),
+    [nodes]
+  )
 
   useEffect(() => {
     const loadBaseData = async () => {
@@ -327,9 +446,7 @@ export default function AgentBuilder() {
         if (courseData.length > 0) {
           setSelectedCourse((prev) => prev ?? courseData[0].id)
         }
-        if (templateData.length > 0) {
-          setSelectedTemplate((prev) => prev ?? templateData[0].id)
-        }
+        setSelectedTemplate((prev) => prev ?? 0)
       } catch (error) {
         message.error(getErrorMessage(error, '加载 Agent Builder 基础数据失败'))
       } finally {
@@ -369,13 +486,17 @@ export default function AgentBuilder() {
 
         if (!nextWorkflow) {
           setCurrentWorkflowId(null)
-          setNodes(buildDefaultNodes())
+          setNodes(buildDefaultNodes(nextAgent.llm_model || 'qwen-max', selectedCourse))
           setEdges(buildDefaultEdges())
           return
         }
 
         setCurrentWorkflowId(nextWorkflow.id)
-        setNodes(nextWorkflow.workflow_dag.nodes?.length ? nextWorkflow.workflow_dag.nodes : buildDefaultNodes())
+        setNodes(
+          nextWorkflow.workflow_dag.nodes?.length
+            ? hydrateWorkflowNodes(nextWorkflow.workflow_dag.nodes, nextAgent, selectedCourse)
+            : buildDefaultNodes(nextAgent.llm_model || 'qwen-max', selectedCourse)
+        )
         setEdges(nextWorkflow.workflow_dag.edges?.length ? nextWorkflow.workflow_dag.edges : buildDefaultEdges())
       } catch (error) {
         message.error(getErrorMessage(error, '加载现有 Agent 配置失败'))
@@ -410,6 +531,18 @@ export default function AgentBuilder() {
     setNodes((currentNodes) => [...currentNodes, node])
   }
 
+  const applyTemplate = () => {
+    const templateNodeTypes: BuilderNodeType[] = selectedTemplate === 0
+      ? ['input_node', 'rag_node', 'llm_node', 'grading_node', 'analytics_node', 'exercise_node', 'output_node']
+      : ['input_node', 'rag_node', 'llm_node', 'output_node']
+    const nextGraph = buildTemplateNodes(templateNodeTypes, selectedCourse)
+    setNodes(nextGraph.nodes)
+    setEdges(nextGraph.edges)
+    setSelectedNode(null)
+    setDrawerOpen(false)
+    message.success(`已应用模板：${selectedTemplateItem?.name || '模板'}`)
+  }
+
   const handleNodeConfigSave = () => {
     if (!selectedNode) return
     const values = form.getFieldsValue()
@@ -434,6 +567,15 @@ export default function AgentBuilder() {
     message.success('节点配置已保存')
   }
 
+  const handleNodeDelete = () => {
+    if (!selectedNode) return
+    setNodes((currentNodes) => currentNodes.filter((node) => node.id !== selectedNode.id))
+    setEdges((currentEdges) => currentEdges.filter((edge) => edge.source !== selectedNode.id && edge.target !== selectedNode.id))
+    setDrawerOpen(false)
+    setSelectedNode(null)
+    message.success('节点已删除')
+  }
+
   const upsertAgent = async () => {
     if (!selectedCourse) {
       message.warning('请先选择关联课程')
@@ -445,7 +587,7 @@ export default function AgentBuilder() {
     }
 
     const payload = {
-      template_id: selectedTemplate,
+      template_id: selectedTemplate && selectedTemplate > 0 ? selectedTemplate : null,
       course_id: selectedCourse,
       name: agentName,
       description: agentDescription,
@@ -453,17 +595,27 @@ export default function AgentBuilder() {
       config: {
         agent_type: 'qa',
         workflow_mode: 'draft',
-        runtime_note: '保存阶段仅校验并持久化 DAG；发布后才会映射为可生效的 QA Agent 配置。',
+        runtime_note: '保存阶段会持久化课程 Agent 的节点配置；发布后会把 QA 主链路映射为可运行配置，并把作业批改/学情分析/练习生成等节点保留为前端能力开关。当前实际运行不会逐节点执行，也不会把 similarity 阈值作为硬过滤规则执行。',
         top_k: validation.mapping.topK,
         similarity_threshold: validation.mapping.similarity,
       },
       tools: validation.mapping.toolNames,
-      llm_provider: 'dashscope',
+      llm_provider: inferProviderFromModel(validation.mapping.llmModel),
       llm_model: validation.mapping.llmModel,
     }
 
-    const response = currentAgentId
-      ? await agentAPI.updateInstance(currentAgentId, payload)
+    let agentIdToUse = currentAgentId
+    if (!agentIdToUse) {
+      const existingResponse = await agentAPI.listInstances(selectedCourse)
+      const existingAgent = existingResponse.data.find((item: AgentItem) => item.is_active) ?? existingResponse.data[0] ?? null
+      if (existingAgent) {
+        agentIdToUse = existingAgent.id
+        setCurrentAgentId(existingAgent.id)
+      }
+    }
+
+    const response = agentIdToUse
+      ? await agentAPI.updateInstance(agentIdToUse, payload)
       : await agentAPI.createInstance(payload)
 
     const nextAgentId = response.data.id as number
@@ -522,7 +674,7 @@ export default function AgentBuilder() {
       await agentAPI.publishWorkflow(workflowId)
       setCurrentAgentId(agentId)
       setCurrentWorkflowId(workflowId)
-      message.success('Agent 已发布，可在课程问答中使用')
+      message.success('Agent 已发布')
     } catch (error) {
       message.error(getErrorMessage(error, '发布 Agent 失败'))
     } finally {
@@ -583,8 +735,9 @@ export default function AgentBuilder() {
             style={{ width: 180 }}
             loading={loadingTemplates}
             placeholder="选择模板"
-            options={templates.map((template) => ({ value: template.id, label: template.name }))}
+            options={templateOptions.map((template) => ({ value: template.id, label: template.name }))}
           />
+          <Button onClick={applyTemplate}>应用模板</Button>
           <Tag color={currentWorkflowId ? 'green' : 'blue'}>{currentWorkflowId ? '已关联工作流' : '新建配置'}</Tag>
           <Tag color={validation.saveErrors.length === 0 ? 'success' : 'error'}>
             {validation.saveErrors.length === 0 ? '结构可保存' : `保存前问题 ${validation.saveErrors.length}`}
@@ -611,12 +764,25 @@ export default function AgentBuilder() {
           <Alert
             type={validation.saveErrors.length === 0 && validation.publishErrors.length === 0 ? 'success' : 'warning'}
             showIcon
-            message="当前是可视化 Agent 配置器：仅支持将 input/rag/llm/output 线性工作流映射为 QA Agent 配置"
-            description="保存会校验 DAG 结构；发布还会检查是否包含仅 UI 原型节点。当前平台不会执行通用工作流引擎，也不承诺通用 DAG 运行能力。"
+            message="当前是课程 Agent 可视化配置器：QA 主链路会映射到运行时，其余能力节点会作为前端功能开关随 Agent 发布"
+            description="保存会校验 DAG 结构。发布后，input/rag/llm/output 会映射到 QA Agent 运行配置；作业批改、学情分析、练习生成等节点当前用于控制前端是否提供对应能力入口，不宣称通用 DAG 逐节点执行。"
           />
+          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Tag color="blue">当前 Agent：{agentName || '未命名 Agent'}</Tag>
+            {enabledNodeTypes.length === 0 ? (
+              <Tag>暂无节点</Tag>
+            ) : (
+              enabledNodeTypes.map((nodeType) => (
+                <Tag key={nodeType} color={NODE_TYPE_META[nodeType as BuilderNodeType]?.runtimeSupported ? 'success' : 'processing'}>
+                  {NODE_TYPE_META[nodeType as BuilderNodeType]?.label || nodeType}
+                </Tag>
+              ))
+            )}
+            {selectedTemplateItem?.description ? <Tag>{selectedTemplateItem.description}</Tag> : null}
+          </div>
         </div>
 
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, cursor: 'default' }}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -626,6 +792,7 @@ export default function AgentBuilder() {
             onNodeClick={onNodeClick}
             nodeTypes={nodeTypes}
             fitView
+            style={{ background: '#ffffff', cursor: 'crosshair' }}
           >
             <Background color="#e0e0e0" gap={20} />
             <Controls />
@@ -656,7 +823,7 @@ export default function AgentBuilder() {
                 <Form.Item label="Top-K 检索数" name="topK">
                   <Select options={[3, 5, 8, 10].map((value) => ({ value, label: `${value} 条` }))} />
                 </Form.Item>
-                <Form.Item label="相似度阈值" name="similarity">
+                <Form.Item label="相似度阈值（当前仅保存配置）" name="similarity">
                   <Select options={[0.5, 0.6, 0.7, 0.8, 0.9].map((value) => ({ value, label: `${value}` }))} />
                 </Form.Item>
               </>
@@ -675,6 +842,9 @@ export default function AgentBuilder() {
             <Form.Item>
               <Button type="primary" block onClick={handleNodeConfigSave}>保存配置</Button>
             </Form.Item>
+            <Form.Item>
+              <Button danger block icon={<DeleteOutlined />} onClick={handleNodeDelete}>删除节点</Button>
+            </Form.Item>
           </Form>
         )}
       </Drawer>
@@ -691,7 +861,7 @@ export default function AgentBuilder() {
             type={validation.saveErrors.length === 0 && validation.publishErrors.length === 0 ? 'success' : 'warning'}
             showIcon
             message={validation.saveErrors.length === 0 && validation.publishErrors.length === 0 ? '当前工作流可发布' : '当前工作流需要处理以下问题'}
-            description="发布后会映射到 Agent 的 `config/tools/llm_model`，不是执行一个通用 DAG 引擎。"
+            description="发布后会映射到 Agent 的 `config/tools/llm_model/top_k`，并保留非 QA 节点作为前端能力开关；不是执行一个通用 DAG 引擎。当前 similarity 阈值只做持久化记录，不作为硬过滤执行。"
           />
 
           <div>
