@@ -24,7 +24,6 @@ const NODE_TYPES_CONFIG = [
   { type: 'grading_node', label: '作业批改', color: '#f59e0b', icon: 'G', runtimeSupported: false },
   { type: 'analytics_node', label: '学情分析', color: '#10b981', icon: 'A', runtimeSupported: false },
   { type: 'exercise_node', label: '练习生成', color: '#ec4899', icon: 'E', runtimeSupported: false },
-  { type: 'condition_node', label: '条件判断', color: '#64748b', icon: 'C', runtimeSupported: false },
   { type: 'output_node', label: '输出', color: '#52c41a', icon: 'O', runtimeSupported: true },
 ]
 
