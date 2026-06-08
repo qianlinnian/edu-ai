@@ -7,6 +7,7 @@ import pytest
 from api.routes import chat
 from education import analytics_engine, exercise_engine
 from models.agent import AgentInstance
+from models.user import UserRole
 from models.course import KnowledgeUnit
 from models.exercise import ExercisePool, ExerciseType
 from models.learning import StudentKnowledgeMastery
@@ -51,7 +52,7 @@ class FakeDB:
 
 
 def make_user(user_id: int = 21):
-    return SimpleNamespace(id=user_id)
+    return SimpleNamespace(id=user_id, role=UserRole.ADMIN)
 
 
 def make_agent(course_id: int = 3) -> AgentInstance:
@@ -104,7 +105,13 @@ def make_knowledge_unit() -> KnowledgeUnit:
 
 @pytest.mark.asyncio
 async def test_learning_loop_smoke_from_attempt_to_alert_to_next_exercise(monkeypatch):
-    attempt_db = FakeDB(results=[FakeResult(scalar=make_choice_exercise()), FakeResult(scalar=None)])
+    attempt_db = FakeDB(
+        results=[
+            FakeResult(scalar=make_choice_exercise()),
+            FakeResult(scalars=[301]),
+            FakeResult(scalar=None),
+        ]
+    )
     attempt = await exercise_engine.create_attempt_and_update_mastery(
         attempt_db,
         student_id=21,
@@ -167,7 +174,8 @@ async def test_chat_stream_small_concurrency_baseline(monkeypatch):
 
     async def run_once(index: int) -> str:
         agent = make_agent()
-        db = FakeDB(results=[FakeResult(scalar=agent), FakeResult(scalars=[])])
+        course = SimpleNamespace(id=agent.course_id, teacher_id=7)
+        db = FakeDB(results=[FakeResult(scalar=course), FakeResult(scalar=agent), FakeResult(scalars=[])])
         response = await chat.send_message_stream(
             data=chat.ChatRequest(agent_id=agent.id, course_id=agent.course_id, message=f"q-{index}"),
             db=db,
