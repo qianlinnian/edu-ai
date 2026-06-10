@@ -128,8 +128,19 @@ function buildDefaultNodes(llmModel: string = 'qwen-max', selectedCourse?: numbe
   }))
 }
 
+function ensureNodePosition(node: Node, index: number): Node {
+  const position = node.position && Number.isFinite(node.position.x) && Number.isFinite(node.position.y)
+    ? node.position
+    : { x: 280, y: 60 + index * 120 }
+  return {
+    ...node,
+    position,
+  }
+}
+
 function hydrateWorkflowNodes(nodes: Node[], agent: AgentItem, selectedCourse?: number) {
-  return nodes.map((node) => {
+  return nodes.map((rawNode, index) => {
+    const node = ensureNodePosition(rawNode, index)
     const nodeType = String(node.data?.nodeType || '')
     if (nodeType === 'llm_node' && !String(node.data?.model || '').trim()) {
       return { ...node, data: { ...node.data, model: agent.llm_model || 'qwen-max' } }
@@ -781,7 +792,7 @@ export default function AgentBuilder() {
           </div>
         </div>
 
-        <div style={{ flex: 1, cursor: 'default' }}>
+        <div style={{ flex: 1, cursor: 'default', minHeight: 520 }}>
           <ReactFlow
             nodes={nodes}
             edges={edges}

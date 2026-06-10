@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.agent_capability import get_published_course_agent_capability
 from core.database import get_db
 from core.permissions import ensure_course_access, ensure_course_manager, ensure_submission_access
 from core.security import get_current_user
@@ -153,6 +154,10 @@ async def submit_assignment(
     if user.role != UserRole.STUDENT:
         raise HTTPException(status_code=403, detail="Only students can submit assignments")
 
+    capability = await get_published_course_agent_capability(db, course_id=course.id)
+    grading_enabled = capability.has_grading
+    target_status = SubmissionStatus.PENDING if grading_enabled else SubmissionStatus.SUBMITTED
+
     file_path = None
     if file:
         if not file.filename:
@@ -175,6 +180,7 @@ async def submit_assignment(
         student_id=user.id,
         content=content,
         file_path=file_path,
+        status=target_status,
     )
 
     try:
@@ -191,12 +197,18 @@ async def submit_assignment(
                 pass
         raise
 
-    grade_submission.apply_async(args=[submission.id], countdown=1)
+    if grading_enabled:
+        grade_submission.apply_async(args=[submission.id], countdown=1)
 
     return {
         "id": submission.id,
         "status": submission.status.value,
-        "message": "Submission accepted and grading queued",
+        "grading_enabled": grading_enabled,
+        "message": (
+            "Submission accepted and grading queued"
+            if grading_enabled
+            else "Submission accepted; AI grading is disabled for this course"
+        ),
     }
 
 
@@ -231,6 +243,8 @@ async def get_grading_result(
 
     if submission.status == SubmissionStatus.FAILED:
         raise HTTPException(status_code=409, detail="Grading failed")
+    if submission.status == SubmissionStatus.SUBMITTED:
+        raise HTTPException(status_code=409, detail="AI grading is disabled for this submission")
     if submission.status != SubmissionStatus.GRADED:
         raise HTTPException(status_code=404, detail="AI grading in progress")
 
@@ -252,6 +266,8 @@ async def get_annotations(
 
     if submission.status == SubmissionStatus.FAILED:
         raise HTTPException(status_code=409, detail="Grading failed")
+    if submission.status == SubmissionStatus.SUBMITTED:
+        raise HTTPException(status_code=409, detail="AI grading is disabled for this submission")
     if submission.status != SubmissionStatus.GRADED:
         raise HTTPException(status_code=404, detail="AI grading in progress")
 
@@ -261,3 +277,33 @@ async def get_annotations(
         .order_by(SubmissionAnnotation.id)
     )
     return result.scalars().all()
+
+
+@router.post("/submissions/{submission_id}/enqueue-grading")
+async def enqueue_submission_grading(
+    submission_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    submission, _assignment, course = await _get_submission_context(db, submission_id)
+    ensure_course_manager(course=course, user=user)
+
+    if submission.status != SubmissionStatus.SUBMITTED:
+        raise HTTPException(status_code=409, detail="Only submitted-but-ungraded submissions can be enqueued")
+
+    capability = await get_published_course_agent_capability(db, course_id=course.id)
+    if not capability.has_grading:
+        raise HTTPException(status_code=409, detail="Current course agent has not enabled AI grading")
+
+    submission.status = SubmissionStatus.PENDING
+    await db.commit()
+    await db.refresh(submission)
+
+    grade_submission.apply_async(args=[submission.id], countdown=1)
+
+    return {
+        "id": submission.id,
+        "status": submission.status.value,
+        "grading_enabled": True,
+        "message": "Submission has been added to the grading queue",
+    }

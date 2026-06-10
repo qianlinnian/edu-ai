@@ -16,6 +16,7 @@ from core.security import get_current_user
 from core.storage import remove_object, get_minio_client, upload_bytes
 from models.agent import AgentInstance, AgentWorkflow
 from models.assignment import Assignment, GradingResult, Submission, SubmissionAnnotation
+from models.chat import ChatMessage, ChatSession
 from models.course import Course, CourseResource, Enrollment, KnowledgeRelation, KnowledgeUnit, ResourceChunk
 from core.config import get_settings
 from models.exercise import ExerciseAttempt, ExercisePool, GeneratedExercise
@@ -327,6 +328,12 @@ async def delete_course(
     agent_ids = (
         await db.execute(select(AgentInstance.id).where(AgentInstance.course_id == course_id))
     ).scalars().all()
+    session_ids = (
+        await db.execute(select(ChatSession.id).where(ChatSession.course_id == course_id))
+    ).scalars().all()
+    if session_ids:
+        await db.execute(delete(ChatMessage).where(ChatMessage.session_id.in_(session_ids)))
+        await db.execute(delete(ChatSession).where(ChatSession.id.in_(session_ids)))
     if agent_ids:
         await db.execute(delete(AgentWorkflow).where(AgentWorkflow.agent_id.in_(agent_ids)))
         await db.execute(delete(AgentInstance).where(AgentInstance.id.in_(agent_ids)))

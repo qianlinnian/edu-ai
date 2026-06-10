@@ -27,11 +27,12 @@ type Submission = {
   student_id: number
   content?: string | null
   file_path?: string | null
-  status?: 'pending' | 'grading' | 'graded' | 'failed'
+  status?: 'submitted' | 'pending' | 'grading' | 'graded' | 'failed'
   submitted_at?: string
 }
 
 const statusTag = (status?: Submission['status']) => {
+  if (status === 'submitted') return <Tag color="default">已提交</Tag>
   if (status === 'graded') return <Tag color="success">已批改</Tag>
   if (status === 'grading') return <Tag color="processing">批改中</Tag>
   if (status === 'failed') return <Tag color="error">批改失败</Tag>
@@ -186,17 +187,27 @@ export default function Assignment() {
         submitMode === 'code' ? codeContent : undefined,
         submitMode === 'file' ? submitFile : undefined,
       )
-      message.success(data?.message || '提交成功，正在批改中')
+      message.success(data?.message || '提交成功')
       const submissionId = data?.id
       setSubmitOpen(null)
       setCodeContent('')
       setSubmitFile(undefined)
       if (selectedAssignment) await loadSubmissions(selectedAssignment.id)
-      if (submissionId) navigate(`/grading/${submissionId}`)
+      if (submissionId && data?.grading_enabled !== false) navigate(`/grading/${submissionId}`)
     } catch (error) {
       message.error(getErrorMessage(error, '提交失败'))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const enqueueGrading = async (submissionId: number) => {
+    try {
+      const { data } = await assignmentAPI.enqueueGrading(submissionId)
+      message.success(data?.message || '已加入批改队列')
+      if (selectedAssignment) await loadSubmissions(selectedAssignment.id)
+    } catch (error) {
+      message.error(getErrorMessage(error, '加入批改队列失败'))
     }
   }
 
@@ -244,7 +255,12 @@ export default function Assignment() {
       render: (_: unknown, row: Submission) => (
         <Space>
           <Button size="small" onClick={() => setSelectedSubmission(row)}>查看内容</Button>
-          <Button size="small" icon={<EyeOutlined />} onClick={() => navigate(`/grading/${row.id}`)}>查看批改</Button>
+          {isTeacher && row.status === 'submitted' && agentCapability?.hasGrading && (
+            <Button size="small" type="primary" ghost onClick={() => void enqueueGrading(row.id)}>加入批改</Button>
+          )}
+          {row.status !== 'submitted' && (
+            <Button size="small" icon={<EyeOutlined />} onClick={() => navigate(`/grading/${row.id}`)}>查看批改</Button>
+          )}
         </Space>
       ),
     },
@@ -277,7 +293,9 @@ export default function Assignment() {
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message="学生提交后会自动触发 AI 批改，可在下方列表查看批改进度与结果入口。"
+          message={agentCapability?.hasGrading
+            ? '学生提交后会自动触发 AI 批改，可在下方列表查看批改进度与结果入口。'
+            : '当前课程仅接收作业提交，不会触发 AI 批改。'}
         />
       ) : (
         <Card style={{ marginBottom: 16, borderRadius: 8 }}>
