@@ -17,43 +17,6 @@ const AgentBuilder = lazy(() => import('./pages/AgentBuilder'))
 const PlatformConfig = lazy(() => import('./pages/PlatformConfig'))
 const Widget = lazy(() => import('./pages/Widget'))
 
-function StartupShell() {
-  return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'linear-gradient(180deg, #f5f8fc 0%, #eaf0f7 100%)',
-      }}
-    >
-      <div style={{ textAlign: 'center' }}>
-        <div
-          style={{
-            width: 52,
-            height: 52,
-            margin: '0 auto 16px',
-            borderRadius: 14,
-            background: 'linear-gradient(135deg, #00a8ff, #0078d7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            fontWeight: 800,
-            fontSize: 24,
-            boxShadow: '0 16px 32px rgba(0, 120, 215, 0.18)',
-          }}
-        >
-          E
-        </div>
-        <Spin size="large" />
-        <div style={{ marginTop: 12, color: '#425466', fontWeight: 600 }}>Starting EduAI...</div>
-      </div>
-    </div>
-  )
-}
-
 function PageFallback() {
   return (
     <div style={{ minHeight: 280, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -70,12 +33,7 @@ function SuspendedPage({ children }: { children: ReactNode }) {
 }
 
 function App() {
-  const hasHydrated = useAuthStore((s) => s.hasHydrated)
   const token = useAuthStore((s) => s.token)
-
-  if (!hasHydrated) {
-    return <StartupShell />
-  }
 
   if (!token) {
     return (
