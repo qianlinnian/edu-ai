@@ -31,6 +31,8 @@ class FakeDB:
         self.deleted = []
         self.flushed = False
         self.refreshed = []
+        self.commit_calls = 0
+        self.rollback_calls = 0
 
     def add(self, obj):
         self.added.append(obj)
@@ -51,6 +53,12 @@ class FakeDB:
 
     async def delete(self, obj):
         self.deleted.append(obj)
+
+    async def commit(self):
+        self.commit_calls += 1
+
+    async def rollback(self):
+        self.rollback_calls += 1
 
 
 def make_user(user_id: int = 42):
@@ -180,6 +188,33 @@ async def test_send_message_stream_success(monkeypatch):
     assert events[2]["session_id"] == 1
     assert events[2]["message_id"] == 3
     assert db.added[-1].content == "part-1part-2"
+    assert db.commit_calls == 2
+    assert db.rollback_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_send_message_stream_rolls_back_when_stream_fails(monkeypatch):
+    agent = make_agent()
+    db = FakeDB(results=[FakeResult(scalar=agent), FakeResult(scalars=[])])
+    data = chat.ChatRequest(agent_id=agent.id, course_id=agent.course_id, message="hello")
+
+    async def fake_chat_stream(self, query, history=None, context=None):
+        yield "part-1"
+        raise RuntimeError("stream failed")
+
+    monkeypatch.setattr(chat.QAAgent, "chat_stream", fake_chat_stream)
+
+    response = await chat.send_message_stream(data=data, db=db, user=make_user())
+    payload = b""
+    async for chunk in response.body_iterator:
+        payload += chunk.encode("utf-8") if isinstance(chunk, str) else chunk
+
+    events = parse_sse_events(payload)
+
+    assert events[0] == {"type": "chunk", "content": "part-1"}
+    assert events[1] == {"type": "error", "detail": "stream failed"}
+    assert db.commit_calls == 1
+    assert db.rollback_calls == 1
 
 
 @pytest.mark.asyncio

@@ -199,6 +199,7 @@ async def send_message_stream(
     user: User = Depends(get_current_user),
 ):
     agent, session, history = await _prepare_chat(data=data, db=db, user=user)
+    await db.commit()
     qa_agent = QAAgent(_agent_config(agent, course_id=data.course_id))
 
     async def event_stream():
@@ -217,6 +218,7 @@ async def send_message_stream(
                 session=session,
                 content="".join(chunks).strip(),
             )
+            await db.commit()
             yield _json_sse(
                 {
                     "type": "done",
@@ -225,6 +227,7 @@ async def send_message_stream(
                 }
             )
         except Exception as exc:
+            await db.rollback()
             yield _json_sse({"type": "error", "detail": str(exc)})
 
     return StreamingResponse(
