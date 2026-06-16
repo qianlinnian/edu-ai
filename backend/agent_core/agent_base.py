@@ -87,6 +87,120 @@ def _safe_json_array(raw_text: str) -> list[dict[str, Any]]:
     return extract_json_object_list(raw_text, list_key="exercises", error_message="LLM output must be a JSON array")
 
 
+def _normalize_dimension_scores(value: Any) -> dict[str, float]:
+    if not isinstance(value, dict):
+        return {}
+
+    output: dict[str, float] = {}
+    for key, raw_score in value.items():
+        name = str(key or "").strip()
+        if not name:
+            continue
+        output[name] = normalize_bounded_score(raw_score, 100.0)
+    return output
+
+
+def _default_grading_dimensions(*, max_score: float, assignment_type: str | None = None) -> list[dict[str, Any]]:
+    normalized_type = str(assignment_type or "text").strip().lower()
+    if normalized_type in {"text", "essay", "short_answer"}:
+        ratios = [
+            ("correctness", 0.6, "Check whether the core concepts and conclusions are correct."),
+            ("completeness", 0.25, "Check whether the required key points are covered."),
+            ("clarity", 0.15, "Check whether the explanation is clear and logically organized."),
+        ]
+    else:
+        ratios = [
+            ("correctness", 0.7, "Check whether the submission is factually and procedurally correct."),
+            ("completeness", 0.2, "Check whether the required parts are covered."),
+            ("clarity", 0.1, "Check whether the answer is understandable and well-structured."),
+        ]
+
+    dimensions: list[dict[str, Any]] = []
+    remaining = round(max_score, 2)
+    for index, (name, ratio, criteria) in enumerate(ratios):
+        if index == len(ratios) - 1:
+            dim_max = round(remaining, 2)
+        else:
+            dim_max = round(max_score * ratio, 2)
+            remaining = round(remaining - dim_max, 2)
+        dimensions.append({"name": name, "max_score": dim_max, "criteria": criteria})
+    return dimensions
+
+
+def build_grading_dimensions(
+    rubric: Any,
+    *,
+    max_score: float,
+    assignment_type: str | None = None,
+) -> list[dict[str, Any]]:
+    dimensions: list[dict[str, Any]] = []
+
+    if isinstance(rubric, dict):
+        raw_dimensions = rubric.get("dimensions")
+        if isinstance(raw_dimensions, list):
+            for item in raw_dimensions:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name") or item.get("id") or "").strip()
+                if not name:
+                    continue
+                dim_max = normalize_bounded_score(item.get("max_score"), max_score)
+                if dim_max <= 0:
+                    continue
+                dimensions.append(
+                    {
+                        "name": name,
+                        "max_score": dim_max,
+                        "criteria": str(item.get("criteria") or item.get("description") or "").strip(),
+                    }
+                )
+
+        if not dimensions:
+            numeric_items: list[tuple[str, float]] = []
+            for key, raw_value in rubric.items():
+                if key in {"text", "dimensions"}:
+                    continue
+                if isinstance(raw_value, (int, float)):
+                    numeric_items.append((str(key).strip(), float(raw_value)))
+
+            total = sum(value for _, value in numeric_items if value > 0)
+            if total > 0:
+                scale = max_score / total
+                for name, value in numeric_items:
+                    if not name or value <= 0:
+                        continue
+                    dimensions.append(
+                        {
+                            "name": name,
+                            "max_score": round(value * scale, 2),
+                            "criteria": "",
+                        }
+                    )
+
+    if not dimensions:
+        dimensions = _default_grading_dimensions(max_score=max_score, assignment_type=assignment_type)
+
+    return dimensions
+
+
+def build_grading_rubric_guidance(
+    rubric: Any,
+    *,
+    max_score: float,
+    assignment_type: str | None = None,
+) -> dict[str, Any]:
+    rubric_text = ""
+    if isinstance(rubric, str):
+        rubric_text = rubric.strip()
+    elif isinstance(rubric, dict):
+        rubric_text = str(rubric.get("text") or "").strip()
+
+    return {
+        "dimensions": build_grading_dimensions(rubric, max_score=max_score, assignment_type=assignment_type),
+        "rubric_text": rubric_text,
+    }
+
+
 def normalize_agent_grading_result(data: dict[str, Any] | None, *, max_score: float) -> dict[str, Any]:
     """Normalize GradingAgent output into the contract used by downstream modules."""
 
@@ -117,10 +231,13 @@ def normalize_agent_grading_result(data: dict[str, Any] | None, *, max_score: fl
     if not isinstance(knowledge_scores, dict):
         knowledge_scores = {}
 
+    dimension_scores = _normalize_dimension_scores(data.get("dimension_scores"))
+
     return {
         "score": normalize_bounded_score(data.get("score"), max_score),
         "max_score": max_score,
         "overall_comment": str(data.get("overall_comment") or data.get("comment") or "Automatic grading completed.").strip(),
+        "dimension_scores": dimension_scores,
         "strengths": normalize_string_list(data.get("strengths")),
         "weaknesses": normalize_string_list(data.get("weaknesses")),
         "annotations": normalized_annotations,
@@ -230,6 +347,11 @@ class GradingAgent(EduAgentBase):
     async def grade(self, submission_content: str, assignment_info: dict) -> dict:
         assignment_info = assignment_info or {}
         max_score = float(assignment_info.get("max_score") or 100)
+        rubric_guidance = build_grading_rubric_guidance(
+            assignment_info.get("rubric"),
+            max_score=max_score,
+            assignment_type=assignment_info.get("assignment_type"),
+        )
         prompt_payload = {
             "assignment": {
                 "title": assignment_info.get("title"),
@@ -237,8 +359,12 @@ class GradingAgent(EduAgentBase):
                 "assignment_type": assignment_info.get("assignment_type"),
                 "max_score": max_score,
                 "rubric": assignment_info.get("rubric"),
+                "grading_dimensions": rubric_guidance["dimensions"],
+                "rubric_text": rubric_guidance["rubric_text"],
                 "reference_answer": assignment_info.get("reference_answer"),
                 "knowledge_points": assignment_info.get("knowledge_points") or [],
+                "course_material_context": assignment_info.get("course_material_context") or "",
+                "grading_review_context": assignment_info.get("grading_review_context") or {},
             },
             "submission_content": submission_content,
         }
@@ -247,18 +373,52 @@ class GradingAgent(EduAgentBase):
                 "role": "system",
                 "content": (
                     f"{self.config.system_prompt or DEFAULT_GRADING_SYSTEM_PROMPT}\n"
-                    "Return only a JSON object with: score, overall_comment, strengths, weaknesses, "
-                    "annotations, knowledge_point_scores."
+                    "Return only a JSON object. Do not use markdown fences.\n"
+                    "You must score the submission dimension by dimension before giving the total score.\n"
+                    "Required JSON keys: score, overall_comment, dimension_scores, strengths, weaknesses, "
+                    "annotations, knowledge_point_scores.\n"
+                    "Rules:\n"
+                    "1. dimension_scores must use the exact grading dimension names provided.\n"
+                    "2. Each dimension score must be between 0 and that dimension's max_score.\n"
+                    "3. score must equal the sum of all dimension_scores.\n"
+                    "4. Use the reference_answer as the standard for a high-scoring answer.\n"
+                    "5. If course_material_context is provided, use it as grounded course evidence, "
+                    "but do not let it override the rubric or the assignment's explicit grading criteria.\n"
+                    "6. For text assignments, judge conceptual correctness, coverage of required points, "
+                    "and clarity, not just length.\n"
+                    "7. Grade the submission by its content quality even if it is written in a different "
+                    "language than the prompt or reference answer.\n"
+                    "8. For text assignments, do not penalize the student merely because no attachment was "
+                    "submitted when plain text content is present.\n"
+                    "9. If the submission is concise but conceptually correct, do not over-penalize it.\n"
+                    "10. For concept-comparison or definition questions, award strong completeness when the "
+                    "answer correctly covers the required contrasts, core operations or properties, and at "
+                    "least one valid application context for each item, even if the examples are brief.\n"
+                    "11. Do not reduce a clearly correct answer to a low band merely because it is compact; "
+                    "reserve low or mid scores for missing required points, factual mistakes, or unclear logic.\n"
+                    "12. If grading_review_context is provided, use it only to audit whether the previous "
+                    "score was too harsh or too generous; still rescore independently from the rubric and "
+                    "submission content.\n"
+                    "13. Each annotation must contain annotation_type, position, content, severity, "
+                    "and knowledge_point_id."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    "Grade the assignment according to the assignment description, rubric, reference answer, "
-                    "and student submission.\n"
-                    "Each annotation must contain annotation_type, position, content, severity, and "
-                    "knowledge_point_id.\n"
-                    "Use position.quote when possible so the frontend can locate the feedback.\n\n"
+                    "Grade the assignment according to the assignment description, structured grading dimensions, "
+                    "rubric text, reference answer, optional grounded course material context, and student submission.\n"
+                    "Work in this order:\n"
+                    "1. Review the reference answer and rubric.\n"
+                    "2. Review any course_material_context if provided and use it only as supporting course evidence.\n"
+                    "3. Score each grading dimension separately.\n"
+                    "4. Sum the dimension scores to produce the final score.\n"
+                    "5. Explain the main strengths and weaknesses.\n"
+                    "6. Add targeted annotations tied to quoted submission text when possible.\n"
+                    "7. If a grading_review_context is present, explicitly check whether the previous result "
+                    "under-scored a concise but correct answer or over-scored an incomplete one, then return "
+                    "your own final rubric-based score.\n"
+                    "Use position.quote whenever possible so the frontend can locate the feedback.\n\n"
                     f"{json.dumps(prompt_payload, ensure_ascii=False)}"
                 ),
             },

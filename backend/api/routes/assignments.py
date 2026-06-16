@@ -15,6 +15,7 @@ from models.assignment import Assignment, GradingResult, Submission, SubmissionA
 from models.course import Course
 from models.user import User, UserRole
 from workers.grading_task import grade_submission
+from workers.embedding_task import SUPPORTED_RESOURCE_TYPES
 
 router = APIRouter()
 
@@ -75,6 +76,12 @@ class SubmissionResponse(BaseModel):
     submitted_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+def _submission_suffix(filename: str) -> str:
+    if "." not in filename:
+        return ""
+    return filename.rsplit(".", 1)[-1].lower()
 
 
 async def _get_course_for_assignment(db: AsyncSession, assignment_id: int) -> tuple[Assignment, Course]:
@@ -162,6 +169,10 @@ async def submit_assignment(
     if file:
         if not file.filename:
             raise HTTPException(status_code=400, detail="Uploaded file name cannot be empty")
+        suffix = _submission_suffix(file.filename)
+        if not suffix or suffix not in SUPPORTED_RESOURCE_TYPES:
+            label = f".{suffix}" if suffix else file.filename
+            raise HTTPException(status_code=400, detail=f"不支持该文件类型：{label}")
         payload = await file.read()
         if not payload:
             raise HTTPException(status_code=400, detail="Uploaded file cannot be empty")

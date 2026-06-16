@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
+from core.normalization import extract_json_object
 from models.assignment import Assignment, Submission
 from workers.grading_task import (
     _fallback_grading,
     _resolve_course_llm_config,
     _grade_with_llm,
-    _safe_json_loads,
     _standardize_grading_payload,
 )
 
@@ -24,7 +26,16 @@ def make_assignment(*, max_score: float = 100.0, knowledge_points: list[int] | N
     )
 
 
-def test_safe_json_loads_extracts_markdown_json_block() -> None:
+def _stub_llm_config():
+    return {
+        "provider": "dashscope",
+        "model": "qwen-max",
+        "system_prompt": None,
+        "source": "default",
+    }
+
+
+def test_extract_json_object_extracts_markdown_json_block() -> None:
     raw = """
     下面是批改结果：
     ```json
@@ -37,7 +48,7 @@ def test_safe_json_loads_extracts_markdown_json_block() -> None:
     ```
     """
 
-    data = _safe_json_loads(raw)
+    data = extract_json_object(raw)
 
     assert data["score"] == "88.5分"
     assert data["overall_comment"] == "结构完整"
@@ -57,13 +68,43 @@ def test_standardize_grading_payload_normalizes_core_fields() -> None:
         source="llm",
     )
 
-    assert result["score"] == 80.0
+    assert result["score"] == 76.0
     assert result["overall_comment"] == "批改完成"
     assert result["strengths"] == ["步骤比较完整"]
     assert result["weaknesses"] == []
     assert result["annotations"] == []
-    assert result["knowledge_point_scores"] == {"1": 100.0, "2": 100.0}
+    assert result["knowledge_point_scores"] == {"1": 95.0, "2": 95.0}
     assert result["source"] == "llm"
+
+
+def test_standardize_grading_payload_scales_raw_score_for_lower_than_100_max_score() -> None:
+    assignment = make_assignment(max_score=10.0)
+
+    result = _standardize_grading_payload(
+        {
+            "score": 50,
+            "overall_comment": "half credit on a 100-point scale",
+        },
+        assignment=assignment,
+        source="llm",
+    )
+
+    assert result["score"] == 5.0
+
+
+def test_standardize_grading_payload_scales_raw_score_for_higher_than_100_max_score() -> None:
+    assignment = make_assignment(max_score=120.0)
+
+    result = _standardize_grading_payload(
+        {
+            "score": 90,
+            "overall_comment": "ninety on a 100-point scale",
+        },
+        assignment=assignment,
+        source="llm",
+    )
+
+    assert result["score"] == 108.0
 
 
 def test_standardize_grading_payload_normalizes_annotations_and_knowledge_scores() -> None:
@@ -167,6 +208,10 @@ def test_grade_with_llm_delegates_to_grading_agent_and_keeps_worker_contract(mon
             }
 
     monkeypatch.setattr("workers.grading_task.GradingAgent", FakeGradingAgent)
+    monkeypatch.setattr(
+        "workers.grading_task._retrieve_grading_context",
+        lambda *, assignment, submission, db: asyncio.sleep(0, result=""),
+    )
     assignment = make_assignment(max_score=100.0, knowledge_points=[1])
     assignment.course_id = 7
     submission = Submission(content="answer", file_path=None)
@@ -240,6 +285,10 @@ def test_grade_with_llm_uses_course_agent_provider_and_model(monkeypatch) -> Non
             "source": "course_agent",
         },
     )
+    monkeypatch.setattr(
+        "workers.grading_task._retrieve_grading_context",
+        lambda *, assignment, submission, db: asyncio.sleep(0, result=""),
+    )
     assignment = make_assignment(max_score=100.0, knowledge_points=[1])
     assignment.course_id = 9
     submission = Submission(content="answer", file_path=None)
@@ -250,3 +299,50 @@ def test_grade_with_llm_uses_course_agent_provider_and_model(monkeypatch) -> Non
     assert captured["config"].llm_model == "deepseek-chat"
     assert "course grading prompt" in captured["config"].system_prompt
     assert result["score"] == 92.0
+
+
+@pytest.mark.parametrize(
+    ("retrieved_context", "expected_fragment", "score"),
+    [
+        ("Course material 1:\nRecursion requires a base case.", "base case", 90),
+        ("", "", 86),
+    ],
+)
+def test_grade_with_llm_passes_course_material_context(monkeypatch, retrieved_context: str, expected_fragment: str, score: int) -> None:
+    captured: dict = {}
+
+    class FakeGradingAgent:
+        def __init__(self, config):
+            pass
+
+        async def grade(self, submission_content: str, assignment_info: dict) -> dict:
+            captured["assignment_info"] = assignment_info
+            return {
+                "score": score,
+                "overall_comment": "context grading",
+                "strengths": [],
+                "weaknesses": [],
+                "annotations": [],
+                "knowledge_point_scores": {"1": score},
+                "source": "llm",
+            }
+
+    monkeypatch.setattr("workers.grading_task.GradingAgent", FakeGradingAgent)
+    monkeypatch.setattr(
+        "workers.grading_task._resolve_course_llm_config",
+        lambda db, *, course_id: _stub_llm_config(),
+    )
+    monkeypatch.setattr(
+        "workers.grading_task._retrieve_grading_context",
+        lambda *, assignment, submission, db: asyncio.sleep(0, result=retrieved_context),
+    )
+    assignment = make_assignment(max_score=100.0, knowledge_points=[1])
+    assignment.course_id = 11
+    submission = Submission(content="answer", file_path=None)
+
+    result = asyncio.run(_grade_with_llm(assignment=assignment, submission=submission, db=object()))
+
+    assert captured["assignment_info"]["course_material_context"] == retrieved_context
+    if expected_fragment:
+        assert expected_fragment in captured["assignment_info"]["course_material_context"]
+    assert result["score"] == float(score)

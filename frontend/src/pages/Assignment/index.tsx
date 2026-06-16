@@ -523,7 +523,7 @@ function SubmitModal({
           label: <span><UploadOutlined /> 上传文件</span>,
           children: (
             <Upload.Dragger
-              accept=".py,.txt,.md,.pdf,.docx,.pptx,.xlsx,.csv,.json"
+              accept=".pdf,.docx,.pptx,.xlsx,.txt"
               maxCount={1}
               beforeUpload={(file) => {
                 onFileChange(file)
@@ -533,6 +533,7 @@ function SubmitModal({
             >
               <p style={{ fontSize: 24 }}><UploadOutlined /></p>
               <p>点击或拖拽上传</p>
+              <p style={{ color: '#999', fontSize: 12 }}>支持 PDF、Word、PPT、Excel、TXT 等文件类型</p>
             </Upload.Dragger>
           ),
         },

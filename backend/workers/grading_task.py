@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
 import asyncio
+import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
@@ -8,12 +10,13 @@ from sqlalchemy import create_engine, delete, desc, select
 from sqlalchemy.orm import sessionmaker
 
 from agent_core.agent_base import AgentConfig, GradingAgent
+from agent_core.llm_provider import get_llm_provider
 from core.config import get_settings
 from core.normalization import extract_json_object, normalize_bounded_score, normalize_string_list
 from education.exercise_engine import DEFAULT_INITIAL_MASTERY, apply_mastery_update
 from models.agent import AgentInstance
 from models.assignment import Assignment, GradingResult, Submission, SubmissionAnnotation, SubmissionStatus
-from models.course import KnowledgeUnit
+from models.course import KnowledgeUnit, ResourceChunk
 from models.learning import LearningAlert, StudentKnowledgeMastery
 from workers.celery_app import celery_app
 
@@ -25,6 +28,164 @@ MAX_GRADING_CONTENT_CHARS = 12000
 MASTERY_ALERT_THRESHOLD = 0.4
 ANNOTATION_TYPES = {"error", "warning", "suggestion", "praise"}
 ANNOTATION_SEVERITIES = {"low", "medium", "high", "critical"}
+GRADING_CONTEXT_TOP_K = 4
+MAX_GRADING_CONTEXT_CHARS = 4000
+REFERENCE_MATCH_MIN_CHARS = 2
+
+TEXT_GRADING_REVIEW_MIN_SCORE = 45.0
+TEXT_GRADING_REVIEW_MAX_SCORE = 90.0
+TEXT_GRADING_REVIEW_MIN_LENGTH = 80
+
+
+def _should_review_text_grading(*, assignment: Assignment, submission: Submission, grading_payload: dict[str, Any]) -> bool:
+    if assignment.assignment_type != "text":
+        return False
+    content = (submission.content or "").strip()
+    if len(content) < TEXT_GRADING_REVIEW_MIN_LENGTH:
+        return False
+    score = float(grading_payload.get("score") or 0.0)
+    return TEXT_GRADING_REVIEW_MIN_SCORE <= score < TEXT_GRADING_REVIEW_MAX_SCORE
+
+
+def _normalize_reference_match_text(value: str | None) -> str:
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    return "".join(ch for ch in text if ch.isalnum())
+
+
+def _extract_explicit_reference_answers(reference_answer: str | None) -> list[str]:
+    text = unicodedata.normalize("NFKC", str(reference_answer or "")).strip()
+    if not text:
+        return []
+
+    patterns = [
+        r"(?:答案是|标准答案是|正确答案是)\s*[:：]?\s*([^\n。；;]+)",
+        r"(?:the\s+answer\s+is|correct\s+answer\s+is|expected\s+answer\s+is)\s*[:：]?\s*([^\n.;]+)",
+    ]
+    candidates: list[str] = []
+    for pattern in patterns:
+        for match in re.findall(pattern, text, flags=re.IGNORECASE):
+            normalized = _normalize_reference_match_text(match)
+            if len(normalized) >= REFERENCE_MATCH_MIN_CHARS and normalized not in candidates:
+                candidates.append(normalized)
+    return candidates
+
+
+def _apply_reference_answer_match_rule(
+    grading_payload: dict[str, Any],
+    *,
+    assignment: Assignment,
+    submission: Submission,
+) -> dict[str, Any]:
+    submission_text = (submission.content or "").strip()
+    reference_answer = str(assignment.reference_answer or "").strip()
+    if not submission_text or not reference_answer:
+        return grading_payload
+
+    normalized_submission = _normalize_reference_match_text(submission_text)
+    normalized_reference = _normalize_reference_match_text(reference_answer)
+    explicit_answers = _extract_explicit_reference_answers(reference_answer)
+
+    matched = False
+    if (
+        len(normalized_submission) >= REFERENCE_MATCH_MIN_CHARS
+        and normalized_submission == normalized_reference
+    ):
+        matched = True
+    elif normalized_submission in explicit_answers:
+        matched = True
+
+    if not matched:
+        return grading_payload
+
+    full_score = float(assignment.max_score)
+    result = dict(grading_payload)
+    result["score"] = full_score
+    result["dimension_scores"] = {
+        item["name"]: float(item["max_score"])
+        for item in _build_dimension_definitions(assignment)
+    }
+    existing_comment = str(result.get("overall_comment") or "").strip()
+    rule_comment = "Submission matches the teacher-provided reference answer; deterministic full-score rule applied."
+    result["overall_comment"] = (
+        f"{rule_comment} {existing_comment}".strip() if existing_comment else rule_comment
+    )
+    result["source"] = f"{grading_payload.get('source', 'llm')}+reference_match_rule"
+    return result
+
+
+def _build_dimension_definitions(assignment: Assignment) -> list[dict[str, Any]]:
+    rubric = assignment.rubric
+    max_score = float(assignment.max_score)
+
+    if isinstance(rubric, dict):
+        raw_dimensions = rubric.get("dimensions")
+        if isinstance(raw_dimensions, list):
+            output: list[dict[str, Any]] = []
+            for item in raw_dimensions:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name") or item.get("id") or "").strip()
+                if not name:
+                    continue
+                dim_max = normalize_bounded_score(item.get("max_score"), max_score)
+                if dim_max <= 0:
+                    continue
+                output.append({"name": name, "max_score": dim_max})
+            if output:
+                return output
+
+        numeric_items: list[tuple[str, float]] = []
+        for key, raw_value in rubric.items():
+            if key in {"text", "dimensions"}:
+                continue
+            if isinstance(raw_value, (int, float)):
+                numeric_items.append((str(key).strip(), float(raw_value)))
+        total = sum(value for _, value in numeric_items if value > 0)
+        if total > 0:
+            scale = max_score / total
+            return [
+                {"name": name, "max_score": round(value * scale, 2)}
+                for name, value in numeric_items
+                if name and value > 0
+            ]
+
+    ratios = [("correctness", 0.6), ("completeness", 0.25), ("clarity", 0.15)]
+    output: list[dict[str, Any]] = []
+    remaining = round(max_score, 2)
+    for index, (name, ratio) in enumerate(ratios):
+        if index == len(ratios) - 1:
+            dim_max = round(remaining, 2)
+        else:
+            dim_max = round(max_score * ratio, 2)
+            remaining = round(remaining - dim_max, 2)
+        output.append({"name": name, "max_score": dim_max})
+    return output
+
+
+def _normalize_dimension_scores(value: Any, *, assignment: Assignment) -> tuple[dict[str, float], float | None]:
+    if not isinstance(value, dict):
+        return {}, None
+
+    definitions = _build_dimension_definitions(assignment)
+    allowed = {item["name"]: float(item["max_score"]) for item in definitions}
+    output: dict[str, float] = {}
+    total = 0.0
+    for key, raw_score in value.items():
+        name = str(key or "").strip()
+        if not name or name not in allowed:
+            continue
+        score = normalize_bounded_score(raw_score, allowed[name])
+        output[name] = score
+        total += score
+
+    return output, round(total, 2) if output else None
+
+
+def _normalize_grading_score(raw_score: Any, *, max_score: float) -> float:
+    normalized = normalize_bounded_score(raw_score, 100.0)
+    if max_score != 100.0:
+        normalized = round((normalized / 100.0) * max_score, 2)
+    return normalize_bounded_score(normalized, max_score)
 
 
 def _calculate_score(*, content: str | None, has_file: bool, max_score: float) -> float:
@@ -46,10 +207,6 @@ def _knowledge_point_ids(value: list | None) -> list[int]:
         except (TypeError, ValueError):
             continue
     return output
-
-
-def _safe_json_loads(raw_text: str) -> dict[str, Any]:
-    return extract_json_object(raw_text, error_message="LLM grading output must be a JSON object")
 
 
 def _file_type_from_path(path: str | None) -> str:
@@ -103,6 +260,55 @@ def _build_grading_content(submission: Submission) -> tuple[str, str]:
         merged = merged[:MAX_GRADING_CONTENT_CHARS] + "\n\n[内容过长，已截断用于自动批改]"
 
     return merged, "\n".join(warnings)
+
+
+async def _retrieve_grading_context(*, assignment: Assignment, submission: Submission, db) -> str:
+    if db is None or assignment.course_id is None:
+        return ""
+
+    parts: list[str] = []
+    for value in [
+        assignment.title,
+        assignment.description,
+        assignment.reference_answer,
+        submission.content,
+    ]:
+        text = str(value or "").strip()
+        if text:
+            parts.append(text)
+    kp_ids = _knowledge_point_ids(assignment.knowledge_points)
+    if kp_ids:
+        parts.append("knowledge points: " + ", ".join(str(item) for item in kp_ids))
+    query = "\n".join(parts).strip()[:1200]
+    if not query:
+        return ""
+
+    try:
+        llm_provider = get_llm_provider("dashscope")
+        embeddings = await llm_provider.embedding([query])
+        if not embeddings:
+            raise RuntimeError("grading query embedding generation returned no vectors")
+        query_embedding = embeddings[0]
+        result = db.execute(
+            select(ResourceChunk)
+            .where(ResourceChunk.course_id == assignment.course_id)
+            .where(ResourceChunk.embedding.is_not(None))
+            .order_by(ResourceChunk.embedding.cosine_distance(query_embedding))
+            .limit(GRADING_CONTEXT_TOP_K)
+        )
+        chunks = result.scalars().all()
+    except Exception:
+        return ""
+    if not chunks:
+        return ""
+
+    parts: list[str] = []
+    for index, chunk in enumerate(chunks, start=1):
+        parts.append(f"Course material {index}:\n{chunk.content}")
+    context = "\n\n".join(parts).strip()
+    if len(context) > MAX_GRADING_CONTEXT_CHARS:
+        context = context[:MAX_GRADING_CONTEXT_CHARS] + "\n\n[course material context truncated]"
+    return context
 
 def _default_model_for_provider(provider: str | None) -> str:
     normalized = (provider or settings.DEFAULT_LLM_PROVIDER or "dashscope").strip().lower()
@@ -245,7 +451,11 @@ def _standardize_grading_payload(
         else 0.0
     )
     raw_score = data.get("score")
-    score = normalize_bounded_score(raw_score, max_score) if raw_score is not None else fallback_score
+    dimension_scores, dimension_total = _normalize_dimension_scores(data.get("dimension_scores"), assignment=assignment)
+    if dimension_total is not None:
+        score = normalize_bounded_score(dimension_total, max_score)
+    else:
+        score = _normalize_grading_score(raw_score, max_score=max_score) if raw_score is not None else fallback_score
     knowledge_point_ids = _knowledge_point_ids(assignment.knowledge_points)
     overall_comment = str(data.get("overall_comment") or data.get("comment") or "").strip()
     if not overall_comment:
@@ -257,6 +467,7 @@ def _standardize_grading_payload(
         "score": score,
         "max_score": max_score,
         "overall_comment": overall_comment,
+        "dimension_scores": dimension_scores,
         "strengths": normalize_string_list(data.get("strengths")),
         "weaknesses": normalize_string_list(data.get("weaknesses")),
         "annotations": _normalize_annotations(data.get("annotations"), knowledge_point_ids=knowledge_point_ids),
@@ -269,11 +480,79 @@ def _standardize_grading_payload(
         "source": source,
     }
 
+async def _review_text_grading_if_needed(
+    *,
+    assignment: Assignment,
+    submission: Submission,
+    grading_payload: dict[str, Any],
+    llm_config: dict[str, str | None],
+    course_material_context: str,
+) -> dict[str, Any]:
+    if not _should_review_text_grading(assignment=assignment, submission=submission, grading_payload=grading_payload):
+        return grading_payload
+
+    agent = GradingAgent(
+        AgentConfig(
+            name="AssignmentGradingReviewAgent",
+            course_id=assignment.course_id,
+            system_prompt=(
+                f"{llm_config['system_prompt']}\n\nYou are reviewing a prior grading result for fairness and calibration."
+                if llm_config["system_prompt"]
+                else "You are reviewing a prior grading result for fairness and calibration."
+            ),
+            llm_provider=llm_config["provider"],
+            llm_model=llm_config["model"],
+            temperature=0.1,
+        )
+    )
+    reviewed = await agent.grade(
+        submission_content=submission.content or "",
+        assignment_info={
+            "title": assignment.title,
+            "description": assignment.description,
+            "assignment_type": assignment.assignment_type,
+            "max_score": assignment.max_score,
+            "rubric": assignment.rubric,
+            "reference_answer": assignment.reference_answer,
+            "knowledge_points": _knowledge_point_ids(assignment.knowledge_points),
+            "course_material_context": course_material_context,
+            "grading_review_context": {
+                "review_mode": "fairness_recheck",
+                "previous_result": {
+                    "score": grading_payload.get("score"),
+                    "dimension_scores": grading_payload.get("dimension_scores"),
+                    "overall_comment": grading_payload.get("overall_comment"),
+                },
+                "instruction": (
+                    "Re-evaluate whether the previous result under-scored or over-scored the answer. "
+                    "Keep the final score aligned with the rubric and submission quality."
+                ),
+            },
+        },
+    )
+    reviewed_payload = _standardize_grading_payload(
+        reviewed,
+        assignment=assignment,
+        submission=submission,
+        source=reviewed.get("source") or "llm_review",
+    )
+    if float(reviewed_payload["score"]) > float(grading_payload["score"]):
+        reviewed_payload["source"] = f"{grading_payload.get('source', 'llm')}+review"
+        return reviewed_payload
+    return grading_payload
+
 async def _grade_with_llm(*, assignment: Assignment, submission: Submission, db=None) -> dict[str, Any]:
     content, warning_text = _build_grading_content(submission)
-    file_note = f"Student submitted attachment: {submission.file_path}" if submission.file_path else "Student did not submit an attachment."
+    file_note_parts: list[str] = []
+    if submission.file_path:
+        file_note_parts.append(f"Student submitted attachment: {submission.file_path}")
+    elif assignment.assignment_type != "text":
+        file_note_parts.append("No attachment was submitted.")
     if warning_text:
-        file_note += f"\nAttachment processing warning: {warning_text}"
+        file_note_parts.append(f"Attachment processing warning: {warning_text}")
+    if assignment.assignment_type == "text" and (submission.content or "").strip():
+        file_note_parts.append("Use the plain text submission below as the primary student answer.")
+    file_note = "\n".join(file_note_parts).strip()
 
     grading_prompt = (
         "You are EduAI's assignment grading agent. Grade according to the assignment, rubric, "
@@ -300,8 +579,13 @@ async def _grade_with_llm(*, assignment: Assignment, submission: Submission, db=
             temperature=0.2,
         )
     )
+    course_material_context = await _retrieve_grading_context(assignment=assignment, submission=submission, db=db)
     agent_result = await agent.grade(
-        submission_content=f"{file_note}\n\n{content or 'No parseable submission text.'}",
+        submission_content=(
+            f"{file_note}\n\n{content or 'No parseable submission text.'}".strip()
+            if file_note
+            else (content or "No parseable submission text.")
+        ),
         assignment_info={
             "title": assignment.title,
             "description": assignment.description,
@@ -310,13 +594,26 @@ async def _grade_with_llm(*, assignment: Assignment, submission: Submission, db=
             "rubric": assignment.rubric,
             "reference_answer": assignment.reference_answer,
             "knowledge_points": _knowledge_point_ids(assignment.knowledge_points),
+            "course_material_context": course_material_context,
         },
     )
-    return _standardize_grading_payload(
+    standardized = _standardize_grading_payload(
         agent_result,
         assignment=assignment,
         submission=submission,
         source=agent_result.get("source") or "llm",
+    )
+    standardized = _apply_reference_answer_match_rule(
+        standardized,
+        assignment=assignment,
+        submission=submission,
+    )
+    return await _review_text_grading_if_needed(
+        assignment=assignment,
+        submission=submission,
+        grading_payload=standardized,
+        llm_config=llm_config,
+        course_material_context=course_material_context,
     )
 
 def _fallback_grading(*, assignment: Assignment, submission: Submission, error: str | None = None) -> dict[str, Any]:
@@ -327,6 +624,11 @@ def _fallback_grading(*, assignment: Assignment, submission: Submission, error: 
     )
     data = {
         "score": score,
+        "dimension_scores": {
+            "correctness": round(score * 0.6, 2),
+            "completeness": round(score * 0.25, 2),
+            "clarity": round(score - round(score * 0.6, 2) - round(score * 0.25, 2), 2),
+        },
         "overall_comment": "Automatic fallback grading completed.",
         "strengths": ["Submission format is complete"] if submission.content or submission.file_path else [],
         "weaknesses": [] if score >= float(assignment.max_score) * 0.6 else ["Submission content is too short; add key steps, evidence, or examples"],
