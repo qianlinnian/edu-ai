@@ -87,10 +87,6 @@ def _safe_json_array(raw_text: str) -> list[dict[str, Any]]:
     return extract_json_object_list(raw_text, list_key="exercises", error_message="LLM output must be a JSON array")
 
 
-def _normalize_score(value: Any, max_score: float) -> float:
-    return normalize_bounded_score(value, max_score)
-
-
 def normalize_agent_grading_result(data: dict[str, Any] | None, *, max_score: float) -> dict[str, Any]:
     """Normalize GradingAgent output into the contract used by downstream modules."""
 
@@ -122,14 +118,14 @@ def normalize_agent_grading_result(data: dict[str, Any] | None, *, max_score: fl
         knowledge_scores = {}
 
     return {
-        "score": _normalize_score(data.get("score"), max_score),
+        "score": normalize_bounded_score(data.get("score"), max_score),
         "max_score": max_score,
         "overall_comment": str(data.get("overall_comment") or data.get("comment") or "Automatic grading completed.").strip(),
         "strengths": normalize_string_list(data.get("strengths")),
         "weaknesses": normalize_string_list(data.get("weaknesses")),
         "annotations": normalized_annotations,
         "knowledge_point_scores": {
-            str(key): _normalize_score(value, 100.0)
+            str(key): normalize_bounded_score(value, 100.0)
             for key, value in knowledge_scores.items()
         },
         "source": str(data.get("source") or "llm"),

@@ -99,7 +99,7 @@ async def test_enroll_course_commits_before_returning(monkeypatch):
     async def fake_get_course_or_404(*args, **kwargs):
         return SimpleNamespace(id=9)
     
-    monkeypatch.setattr(courses, "_get_course_or_404", fake_get_course_or_404)
+    monkeypatch.setattr(courses, "get_course_or_404", fake_get_course_or_404)
 
     result = await courses.enroll_course(course_id=9, db=db, user=make_student())
 
@@ -116,7 +116,7 @@ async def test_unenroll_course_commits_before_returning(monkeypatch):
     async def fake_get_course_or_404(*args, **kwargs):
         return SimpleNamespace(id=9)
     
-    monkeypatch.setattr(courses, "_get_course_or_404", fake_get_course_or_404)
+    monkeypatch.setattr(courses, "get_course_or_404", fake_get_course_or_404)
 
     result = await courses.unenroll_course(course_id=9, db=db, user=make_student())
 

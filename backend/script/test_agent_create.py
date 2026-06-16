@@ -1,6 +1,5 @@
 """测试 Agent 创建的简单脚本"""
 import requests
-import json
 
 BASE_URL = "http://localhost:8000/api/v1"
 

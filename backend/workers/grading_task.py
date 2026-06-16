@@ -1,7 +1,6 @@
 ﻿from __future__ import annotations
 
 import asyncio
-import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -53,10 +52,6 @@ def _safe_json_loads(raw_text: str) -> dict[str, Any]:
     return extract_json_object(raw_text, error_message="LLM grading output must be a JSON object")
 
 
-def _normalize_score(value: Any, max_score: float) -> float:
-    return normalize_bounded_score(value, max_score)
-
-
 def _file_type_from_path(path: str | None) -> str:
     if not path or "." not in path:
         return "txt"
@@ -99,31 +94,15 @@ def _build_grading_content(submission: Submission) -> tuple[str, str]:
 
     file_text, file_warning = _load_submission_file_text(submission.file_path)
     if file_text:
-        text_parts.append(f"[闄勪欢瑙ｆ瀽鍐呭]\n{file_text}")
+        text_parts.append(f"[附件解析内容]\n{file_text}")
     if file_warning:
         warnings.append(file_warning)
 
     merged = "\n\n".join(text_parts).strip()
     if len(merged) > MAX_GRADING_CONTENT_CHARS:
-        merged = merged[:MAX_GRADING_CONTENT_CHARS] + "\n\n[鍐呭杩囬暱锛屽凡鎴柇鐢ㄤ簬鑷姩鎵规敼]"
+        merged = merged[:MAX_GRADING_CONTENT_CHARS] + "\n\n[内容过长，已截断用于自动批改]"
 
     return merged, "\n".join(warnings)
-
-
-def _format_assignment_context(assignment: Assignment) -> str:
-    rubric_text = json.dumps(assignment.rubric, ensure_ascii=False) if assignment.rubric else "No rubric provided. Use correctness 60%, completeness 25%, clarity 15%."
-    reference_answer = assignment.reference_answer or "No reference answer provided. Grade according to the assignment description and rubric."
-    knowledge_point_ids = _knowledge_point_ids(assignment.knowledge_points)
-    return (
-        f"Assignment title: {assignment.title}\n"
-        f"Description: {assignment.description or 'N/A'}\n"
-        f"Type: {assignment.assignment_type}\n"
-        f"Max score: {assignment.max_score}\n"
-        f"Knowledge point IDs: {knowledge_point_ids or 'N/A'}\n"
-        f"Rubric: {rubric_text}\n"
-        f"Reference answer: {reference_answer}"
-    )
-
 
 def _default_model_for_provider(provider: str | None) -> str:
     normalized = (provider or settings.DEFAULT_LLM_PROVIDER or "dashscope").strip().lower()
@@ -203,7 +182,7 @@ def _normalize_knowledge_scores(
             continue
         if allowed_ids and key_text not in allowed_ids:
             continue
-        output[key_text] = _normalize_score(raw_score, 100.0)
+        output[key_text] = normalize_bounded_score(raw_score, 100.0)
 
     return output or _fallback_knowledge_scores(knowledge_point_ids, score, max_score)
 
@@ -266,7 +245,7 @@ def _standardize_grading_payload(
         else 0.0
     )
     raw_score = data.get("score")
-    score = _normalize_score(raw_score, max_score) if raw_score is not None else fallback_score
+    score = normalize_bounded_score(raw_score, max_score) if raw_score is not None else fallback_score
     knowledge_point_ids = _knowledge_point_ids(assignment.knowledge_points)
     overall_comment = str(data.get("overall_comment") or data.get("comment") or "").strip()
     if not overall_comment:

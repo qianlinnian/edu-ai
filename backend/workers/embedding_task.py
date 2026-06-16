@@ -6,7 +6,6 @@ from io import BytesIO
 
 import dashscope
 import asyncio
-from minio import Minio
 from docx import Document
 from openpyxl import load_workbook
 from PyPDF2 import PdfReader
@@ -16,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 import pypdfium2 as pdfium
 
 from core.config import get_settings
+from core.storage import get_minio_client
 from models.course import CourseResource, ResourceChunk
 from workers.celery_app import celery_app
 
@@ -25,15 +25,6 @@ settings = get_settings()
 sync_engine = create_engine(settings.DATABASE_SYNC_URL)
 SyncSessionLocal = sessionmaker(bind=sync_engine)
 SUPPORTED_RESOURCE_TYPES = {"txt", "md", "py", "json", "csv", "pdf", "docx", "pptx", "xlsx"}
-
-
-def get_minio_client() -> Minio:
-    return Minio(
-        settings.MINIO_ENDPOINT,
-        access_key=settings.MINIO_ACCESS_KEY,
-        secret_key=settings.MINIO_SECRET_KEY,
-        secure=False,
-    )
 
 
 def generate_chunk_embeddings(chunks: list[str]) -> list[list[float]]:

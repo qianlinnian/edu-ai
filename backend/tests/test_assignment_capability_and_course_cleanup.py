@@ -191,7 +191,7 @@ async def test_delete_course_removes_chat_records_before_agents(monkeypatch):
     async def fake_get_course(db, course_id):
         return make_course(course_id=course_id, teacher_id=7)
 
-    monkeypatch.setattr(courses, "_get_course_or_404", fake_get_course)
+    monkeypatch.setattr(courses, "get_course_or_404", fake_get_course)
     monkeypatch.setattr(courses, "ensure_course_manager", lambda *, course, user: None)
     monkeypatch.setattr(courses, "remove_object", lambda object_name: None)
 

@@ -33,6 +33,8 @@ class FakeDB:
     def __init__(self, results=None):
         self.results = list(results or [])
         self.added = []
+        self.commits = 0
+        self.rollbacks = 0
 
     def add(self, obj):
         self.added.append(obj)
@@ -46,6 +48,12 @@ class FakeDB:
         for index, obj in enumerate(self.added, start=1):
             if getattr(obj, "id", None) is None:
                 obj.id = index
+
+    async def commit(self):
+        self.commits += 1
+
+    async def rollback(self):
+        self.rollbacks += 1
 
     async def refresh(self, obj):
         return None

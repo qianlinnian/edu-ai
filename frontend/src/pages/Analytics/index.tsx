@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Card, Col, Empty, List, Row, Select, Skeleton, Space, Statistic, Tag, Typography } from 'antd'
-import { AlertOutlined, BarChartOutlined, TeamOutlined, WarningOutlined } from '@ant-design/icons'
+import { BarChartOutlined, TeamOutlined, WarningOutlined } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 import { analyticsAPI, courseAPI, getCourseAgentCapability, getErrorMessage, type CourseAgentCapability } from '../../services/api'
 import { useAuthStore } from '../../hooks/useAuthStore'

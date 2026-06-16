@@ -203,7 +203,7 @@ async def test_create_workflow_preserves_validated_workflow_dag(monkeypatch):
     )
 
     monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=course))
 
     result = await agents.create_workflow(data=payload, db=db, user=make_teacher())
 
@@ -230,7 +230,7 @@ async def test_create_agent_rejects_duplicate_agent_for_same_course(monkeypatch)
         llm_model="qwen-max",
     )
 
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=course))
     monkeypatch.setattr(agents, "_get_agent_by_course", AsyncMock(return_value=existing_agent))
 
     with pytest.raises(HTTPException) as exc:
@@ -255,7 +255,7 @@ async def test_create_agent_normalizes_provider_from_model(monkeypatch):
         llm_model="deepseek-chat",
     )
 
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=course))
     monkeypatch.setattr(agents, "_get_agent_by_course", AsyncMock(return_value=None))
 
     result = await agents.create_agent(data=payload, db=db, user=make_teacher())
@@ -276,7 +276,7 @@ async def test_update_agent_rejects_reassigning_to_course_with_existing_agent(mo
     payload = agents.AgentInstanceUpdate(course_id=11)
 
     monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(side_effect=[current_course, new_course]))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(side_effect=[current_course, new_course]))
     monkeypatch.setattr(agents, "_get_agent_by_course", AsyncMock(return_value=existing_agent))
 
     with pytest.raises(HTTPException) as exc:
@@ -294,7 +294,7 @@ async def test_update_agent_normalizes_provider_from_model(monkeypatch):
     payload = agents.AgentInstanceUpdate(llm_provider="dashscope", llm_model="deepseek-chat")
 
     monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=current_course))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=current_course))
 
     result = await agents.update_agent(agent_id=agent.id, data=payload, db=db, user=make_teacher())
 
@@ -315,7 +315,7 @@ async def test_create_workflow_rejects_invalid_dag(monkeypatch):
     )
 
     monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=course))
 
     with pytest.raises(HTTPException) as exc:
         await agents.create_workflow(data=payload, db=db, user=make_teacher())
@@ -333,7 +333,7 @@ async def test_publish_workflow_marks_agent_active_and_applies_runtime_mapping(m
 
     monkeypatch.setattr(agents, "_get_workflow_or_404", AsyncMock(return_value=workflow))
     monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=course))
 
     result = await agents.publish_workflow(workflow_id=workflow.id, db=db, user=make_teacher())
 
@@ -360,7 +360,7 @@ async def test_publish_workflow_allows_ui_only_nodes_as_capability_switches(monk
 
     monkeypatch.setattr(agents, "_get_workflow_or_404", AsyncMock(return_value=workflow))
     monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=course))
 
     result = await agents.publish_workflow(workflow_id=workflow.id, db=db, user=make_teacher())
 
