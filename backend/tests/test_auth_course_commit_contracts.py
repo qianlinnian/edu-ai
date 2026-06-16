@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 
 from api.routes import auth, courses
 from models.user import UserRole
@@ -46,6 +48,9 @@ class FakeDB:
     async def delete(self, obj):
         self.deleted.append(obj)
 
+    async def rollback(self):
+        self.rolled_back = True
+
 
 def make_teacher(user_id: int = 7):
     return SimpleNamespace(id=user_id, role=UserRole.TEACHER)
@@ -90,6 +95,51 @@ async def test_create_course_commits_before_returning():
     assert db.committed is True
     assert db.refreshed
     assert result.name == "Integration Course"
+
+
+class DuplicateCourseDB(FakeDB):
+    async def flush(self):
+        raise IntegrityError("insert into courses", {}, Exception("duplicate key value violates unique constraint courses_code_key"))
+
+
+@pytest.mark.asyncio
+async def test_create_course_returns_409_for_duplicate_code():
+    db = DuplicateCourseDB()
+    payload = courses.CourseCreate(
+        name="Duplicate Course",
+        code="INT-101",
+        description="duplicate",
+        domain="testing",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await courses.create_course(data=payload, db=db, user=make_teacher())
+
+    assert exc.value.status_code == 409
+    assert "课程代码已存在" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_update_course_returns_409_for_duplicate_code(monkeypatch):
+    db = DuplicateCourseDB()
+    course = SimpleNamespace(id=9, teacher_id=7, name="Old", code="OLD-101", description="old", domain="testing")
+    payload = courses.CourseCreate(
+        name="Updated",
+        code="INT-101",
+        description="duplicate",
+        domain="testing",
+    )
+
+    async def fake_get_course_or_404(*args, **kwargs):
+        return course
+
+    monkeypatch.setattr(courses, "get_course_or_404", fake_get_course_or_404)
+
+    with pytest.raises(HTTPException) as exc:
+        await courses.update_course(course_id=9, data=payload, db=db, user=make_teacher())
+
+    assert exc.value.status_code == 409
+    assert "课程代码已存在" in exc.value.detail
 
 
 @pytest.mark.asyncio

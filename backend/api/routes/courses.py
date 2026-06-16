@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from core.course_helpers import get_course_or_404
 from core.database import get_db
@@ -113,15 +114,26 @@ def _knowledge_name_from_text(text: str, index: int) -> str:
     return normalized[:28] or f"课程知识点 {index}"
 
 
+def _raise_course_conflict(exc: IntegrityError) -> None:
+    detail = str(getattr(exc, "orig", exc)).lower()
+    if "courses_code_key" in detail or "duplicate key value" in detail or "unique constraint" in detail:
+        raise HTTPException(status_code=409, detail="课程代码已存在，请使用不同的课号") from exc
+    raise exc
+
+
 @router.post("", response_model=CourseResponse)
 async def create_course(data: CourseCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     if user.role not in {UserRole.TEACHER, UserRole.ADMIN}:
         raise HTTPException(status_code=403, detail="Teacher or admin access required")
     course = Course(**data.model_dump(), teacher_id=user.id)
-    db.add(course)
-    await db.flush()
-    await db.commit()
-    await db.refresh(course)
+    try:
+        db.add(course)
+        await db.flush()
+        await db.commit()
+        await db.refresh(course)
+    except IntegrityError as exc:
+        await db.rollback()
+        _raise_course_conflict(exc)
     return course
 
 
@@ -248,12 +260,17 @@ async def update_course(
 ):
     course = await get_course_or_404(db, course_id)
     ensure_course_manager(course=course, user=user)
-    course.name = data.name
-    course.code = data.code
-    course.description = data.description
-    course.domain = data.domain
-    await db.flush()
-    await db.refresh(course)
+    try:
+        course.name = data.name
+        course.code = data.code
+        course.description = data.description
+        course.domain = data.domain
+        await db.flush()
+        await db.commit()
+        await db.refresh(course)
+    except IntegrityError as exc:
+        await db.rollback()
+        _raise_course_conflict(exc)
     return course
 
 
