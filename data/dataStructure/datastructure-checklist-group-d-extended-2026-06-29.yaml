@@ -1,0 +1,219 @@
+- question: "栈这种线性结构的典型操作特征是？"
+  options:
+    A: "先进先出"
+    B: "后进先出"
+    C: "随机存取"
+    D: "按关键字有序"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "栈与队列"
+
+- question: "队列这种线性结构的典型操作特征是？"
+  options:
+    A: "后进先出"
+    B: "只能头部插入"
+    C: "先进先出"
+    D: "支持二分查找"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "栈与队列"
+
+- question: "二叉树第 i 层上最多有多少个结点？"
+  options:
+    A: "2^(i-1)"
+    B: "2^i"
+    C: "i"
+    D: "i-1"
+  expected_points:
+    - "正确答案：A"
+  answerable_from_material: true
+  source_material: "树与森林"
+
+- question: "具有 n 个结点的完全二叉树，其高度通常为？"
+  options:
+    A: "n"
+    B: "floor(log2 n) + 1"
+    C: "2n"
+    D: "n/2"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "树与森林"
+
+- question: "在任意非空二叉树中，若 n0 表示叶子结点数、n2 表示度为 2 的结点数，则有？"
+  options:
+    A: "n0 = n2 - 1"
+    B: "n0 = n2"
+    C: "n0 = n2 + 1"
+    D: "n0 = 2n2"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "树与森林"
+
+- question: "二叉树的前序遍历顺序是？"
+  options:
+    A: "左-根-右"
+    B: "根-左-右"
+    C: "左-右-根"
+    D: "右-根-左"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "树与森林"
+
+- question: "二叉树的中序遍历顺序是？"
+  options:
+    A: "左-根-右"
+    B: "根-左-右"
+    C: "左-右-根"
+    D: "根-右-左"
+  expected_points:
+    - "正确答案：A"
+  answerable_from_material: true
+  source_material: "树与森林"
+
+- question: "二叉树的后序遍历顺序是？"
+  options:
+    A: "左-根-右"
+    B: "根-左-右"
+    C: "左-右-根"
+    D: "根-右-左"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "树与森林"
+
+- question: "图的深度优先遍历通常最接近使用哪种辅助结构实现？"
+  options:
+    A: "队列"
+    B: "栈"
+    C: "堆"
+    D: "数组必须有序"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "图"
+
+- question: "图的广度优先遍历通常最接近使用哪种辅助结构实现？"
+  options:
+    A: "栈"
+    B: "哈希表"
+    C: "队列"
+    D: "平衡树"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "图"
+
+- question: "拓扑排序结果存在的前提是图必须是？"
+  options:
+    A: "无向图"
+    B: "完全图"
+    C: "有向无环图"
+    D: "带权图"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "图"
+
+- question: "关键路径分析主要针对哪一类网络？"
+  options:
+    A: "AOE 网"
+    B: "AOV 网"
+    C: "无向完全图"
+    D: "二叉树"
+  expected_points:
+    - "正确答案：A"
+  answerable_from_material: true
+  source_material: "图"
+
+- question: "折半查找能够成立的基本前提是？"
+  options:
+    A: "表可以无序"
+    B: "表必须顺序存储"
+    C: "关键字有序"
+    D: "必须使用链表"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "集合与搜索"
+
+- question: "二叉搜索树中，任一结点左子树上所有关键字都应？"
+  options:
+    A: "大于该结点关键字"
+    B: "小于该结点关键字"
+    C: "等于该结点关键字"
+    D: "与该结点无关"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "集合与搜索"
+
+- question: "平均情况下，快速排序的时间复杂度通常为？"
+  options:
+    A: "O(1)"
+    B: "O(log n)"
+    C: "O(n log n)"
+    D: "O(n^2)"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "排序"
+
+- question: "直接插入排序属于哪一类排序性质？"
+  options:
+    A: "稳定排序"
+    B: "不稳定排序"
+    C: "只能用于链表"
+    D: "时间复杂度恒为 O(n log n)"
+  expected_points:
+    - "正确答案：A"
+  answerable_from_material: true
+  source_material: "排序"
+
+- question: "堆排序属于哪一类排序性质？"
+  options:
+    A: "稳定排序"
+    B: "不稳定排序"
+    C: "只能用于顺序查找"
+    D: "不需要比较关键字"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "排序"
+
+- question: "在最大堆中，根结点的关键字应当？"
+  options:
+    A: "最小"
+    B: "最大"
+    C: "等于中位数"
+    D: "无法确定"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "排序"
+
+- question: "处理哈希冲突的常见方法之一是？"
+  options:
+    A: "拓扑排序"
+    B: "线性探测"
+    C: "中序遍历"
+    D: "堆调整"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "索引与散列"
+
+- question: "散列表的装填因子越大，通常表示？"
+  options:
+    A: "表越空"
+    B: "冲突一定不存在"
+    C: "表越满"
+    D: "查找一定变成 O(1)"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "索引与散列"

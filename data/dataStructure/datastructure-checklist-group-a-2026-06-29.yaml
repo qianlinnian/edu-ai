@@ -1,0 +1,109 @@
+- question: "在长度为 n 的顺序表中，在第 i 个位置插入一个元素，平均需要移动元素个数为？"
+  options:
+    A: "n"
+    B: "n/2"
+    C: "i"
+    D: "n-i"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "一、数组与链表，第1题"
+
+- question: "单链表中删除某节点 p 的前驱节点，已知 p 指针，时间复杂度为："
+  options:
+    A: "O(1)"
+    B: "O(log n)"
+    C: "O(n)"
+    D: "O(n²)"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "一、数组与链表，第2题"
+
+- question: "双链表相比单链表的主要优势是？"
+  options:
+    A: "节省空间"
+    B: "支持随机访问"
+    C: "可双向遍历"
+    D: "插入更慢"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "一、数组与链表，第3题"
+
+- question: "循环队列中，判断队满的条件是？"
+  options:
+    A: "front == rear"
+    B: "front + 1 == rear"
+    C: "(rear + 1) % maxSize == front"
+    D: "rear == maxSize"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "二、栈与队列，第4题"
+
+- question: "用栈实现递归的本质是？"
+  options:
+    A: "队列操作"
+    B: "函数调用栈"
+    C: "数组模拟"
+    D: "指针运算"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "二、栈与队列，第5题"
+
+- question: "表达式求值中，中缀转后缀主要利用？"
+  options:
+    A: "队列"
+    B: "栈"
+    C: "数组"
+    D: "树"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "二、栈与队列，第6题"
+
+- question: "递归算法必须具备？"
+  options:
+    A: "循环结构"
+    B: "终止条件"
+    C: "多重分支"
+    D: "指针操作"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "三、递归与广义表，第7题"
+
+- question: "广义表 (a,(b,c)) 的深度为？"
+  options:
+    A: "1"
+    B: "2"
+    C: "3"
+    D: "4"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "三、递归与广义表，第8题"
+
+- question: "一棵有 n 个节点的二叉树，其空指针域个数为？"
+  options:
+    A: "n"
+    B: "n+1"
+    C: "n-1"
+    D: "2n"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "四、树与森林，第9题"
+
+- question: "已知二叉树前序和中序遍历，能否唯一确定一棵树？"
+  options:
+    A: "不能"
+    B: "能"
+    C: "仅完全二叉树可以"
+    D: "仅满二叉树可以"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "四、树与森林，第10题"

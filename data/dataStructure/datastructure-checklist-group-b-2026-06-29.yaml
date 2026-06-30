@@ -1,0 +1,109 @@
+- question: "森林转二叉树采用？"
+  options:
+    A: "顺序存储"
+    B: "左孩子右兄弟表示法"
+    C: "哈希映射"
+    D: "邻接矩阵"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "四、树与森林，第11题"
+
+- question: "树的高度定义为："
+  options:
+    A: "节点数"
+    B: "边数"
+    C: "最大层数"
+    D: "最小路径"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "四、树与森林，第12题"
+
+- question: "顺序查找的平均查找长度（成功）为？"
+  options:
+    A: "n"
+    B: "n/2"
+    C: "log n"
+    D: "1"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "五、集合与搜索，第13题"
+
+- question: "二分查找失败的时间复杂度为："
+  options:
+    A: "O(1)"
+    B: "O(log n)"
+    C: "O(n)"
+    D: "O(n log n)"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "五、集合与搜索，第14题"
+
+- question: "二叉搜索树查找性能取决于："
+  options:
+    A: "节点值"
+    B: "树的高度"
+    C: "插入顺序"
+    D: "节点个数"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "五、集合与搜索，第15题"
+
+- question: "图的邻接矩阵适用于："
+  options:
+    A: "稀疏图"
+    B: "稠密图"
+    C: "树"
+    D: "DAG"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "六、图，第16题"
+
+- question: "无向图中边数为 e，则邻接矩阵中非零元素个数为？"
+  options:
+    A: "e"
+    B: "2e"
+    C: "e/2"
+    D: "n"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "六、图，第17题"
+
+- question: "拓扑排序适用于："
+  options:
+    A: "无向图"
+    B: "有向无环图"
+    C: "完全图"
+    D: "树"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "六、图，第18题"
+
+- question: "Dijkstra算法不能处理？"
+  options:
+    A: "正权图"
+    B: "负权边"
+    C: "稠密图"
+    D: "稀疏图"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "六、图，第19题"
+
+- question: "稳定排序算法是："
+  options:
+    A: "快速排序"
+    B: "堆排序"
+    C: "归并排序"
+    D: "选择排序"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "七、排序，第20题"

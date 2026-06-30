@@ -1,0 +1,212 @@
+- id: grading_eval_bad_01
+  label: bad
+  expected_min: 0
+  expected_max: 40
+  content: |
+    递归就是函数调用自己。我觉得不需要终止条件，只要一直调用就能得到结果。
+
+- id: grading_eval_bad_02
+  label: bad
+  expected_min: 0
+  expected_max: 45
+  content: |
+    递归就是程序重复执行同一段代码，系统会自动结束，所以不用考虑什么时候停止。
+
+- id: grading_eval_bad_03
+  label: bad
+  expected_min: 0
+  expected_max: 45
+  content: |
+    递归的重点就是多次调用函数本身。我不清楚 base case 是什么，但感觉递归本来就会自动回到上一层。
+
+- id: grading_eval_bad_04
+  label: bad
+  expected_min: 0
+  expected_max: 42
+  content: |
+    递归和循环差不多，都是一直重复。递归不需要专门写结束条件，因为函数总会算完。
+
+- id: grading_eval_bad_05
+  label: bad
+  expected_min: 0
+  expected_max: 42
+  content: |
+    factorial 这种题只要不断调用自己就行，n 变不变无所谓，反正最后会停。
+
+- id: grading_eval_bad_08
+  label: bad
+  expected_min: 0
+  expected_max: 40
+  content: |
+    Recursion just means repeating the same function again and again.
+    You do not need a base case because the computer will stop automatically.
+
+- id: grading_eval_bad_09
+  label: bad
+  expected_min: 0
+  expected_max: 42
+  content: |
+    A recursive solution is basically the same as a loop.
+    The deeper the calls go, the more complete the answer is, so stopping conditions are not important.
+
+- id: grading_eval_bad_11
+  label: bad
+  expected_min: 0
+  expected_max: 45
+  content: |
+    In factorial problems, n does not really need to get smaller.
+    The function can keep calling itself and still get the result later.
+
+- id: grading_eval_mid_01
+  label: mid
+  expected_min: 55
+  expected_max: 80
+  content: |
+    递归是函数直接或间接调用自己。设计递归时需要有终止条件，例如 factorial 在 n==0 时返回 1。
+    每次递归调用都会把参数变成 n-1，让问题逐步接近终止条件。不过这里没有展开为什么没有终止条件会出错。
+
+- id: grading_eval_mid_02
+  label: mid
+  expected_min: 60
+  expected_max: 82
+  content: |
+    递归通常包含递归式和终止条件。比如 factorial(n)=n*factorial(n-1)，当 n=0 时结束。
+    这样每次都让问题规模变小。不过我的说明比较简略，没有具体解释无限递归的后果。
+
+- id: grading_eval_mid_03
+  label: mid
+  expected_min: 58
+  expected_max: 80
+  content: |
+    递归是一种把大问题变成小问题的方法，函数会调用自己。它应该设置一个结束条件，否则可能一直调用下去。
+    以 factorial 为例，可以一直减 1 直到 0。不过这里我没有完整说明 base case 和 recursive case 的区别。
+
+- id: grading_eval_mid_05
+  label: mid
+  expected_min: 58
+  expected_max: 80
+  content: |
+    递归就是函数调用自己，同时要设置停止条件。比如斐波那契数列在 n=0 或 n=1 时可以直接返回。
+    这个方法的关键是规模不断缩小。不过我没有把定义、base case 和递归推进讲得很系统。
+
+- id: grading_eval_mid_07
+  label: mid
+  expected_min: 62
+  expected_max: 82
+  content: |
+    递归是程序设计中常见的方法，函数可以通过调用自己来解决问题。写递归时要保证有终止条件，并让参数向终止条件靠近。
+    如果没有这两点，就可能无法结束。不过这个答案没有展开完整例子。
+
+- id: grading_eval_mid_08
+  label: mid
+  expected_min: 58
+  expected_max: 80
+  content: |
+    Recursion is a way for a function to solve a problem by calling itself on a smaller version.
+    A recursive design should include a termination condition.
+    For example, factorial uses factorial(0)=1 and otherwise calls factorial(n-1).
+    However, this answer does not clearly explain why missing the base case causes failure.
+
+- id: grading_eval_mid_09
+  label: mid
+  expected_min: 60
+  expected_max: 82
+  content: |
+    A recursive function usually has two parts: the stopping condition and the recursive step.
+    In factorial, n keeps moving toward 0, so the process can end.
+    This explanation is correct in the main idea, but it is still brief and not very systematic.
+
+- id: grading_eval_mid_10
+  label: mid
+  expected_min: 60
+  expected_max: 82
+  content: |
+    Recursion breaks one big problem into smaller problems of the same type.
+    The function calls itself and should contain a base case.
+    Fibonacci is a common example, but this answer does not clearly distinguish the recursive case from the base case.
+
+- id: grading_eval_good_01
+  label: good
+  expected_min: 82
+  expected_max: 100
+  content: |
+    递归是函数通过调用自身来解决规模更小的同类问题。一个完整的递归定义通常包含两部分：
+    第一，终止条件，也叫 base case，例如 factorial(0)=1；
+    第二，递归步骤，例如 factorial(n)=n*factorial(n-1)。
+    每一次递归调用都必须让参数向终止条件收敛，否则会导致无限递归和栈溢出。
+
+- id: grading_eval_good_02
+  label: good
+  expected_min: 85
+  expected_max: 100
+  content: |
+    递归的核心不是简单地“调用自己”，而是把原问题拆成结构相同但规模更小的子问题。
+    写递归函数时要明确 base case 和 recursive case，base case 负责停止递归，
+    recursive case 负责推进问题规模，例如把 n 变成 n-1。这样每一层调用都会逼近终止条件，最终回溯得到结果。
+
+- id: grading_eval_good_03
+  label: good
+  expected_min: 84
+  expected_max: 100
+  content: |
+    以阶乘为例，递归函数可以定义为：当 n==0 时返回 1，否则返回 n*factorial(n-1)。
+    这里既有终止条件，也有递归推进过程。递归设计的关键是保证每一步都向 base case 收敛，
+    如果没有这一点，就会产生无限递归和栈溢出。因此，递归是“自调用 + 终止条件 + 规模收敛”的组合。
+
+- id: grading_eval_good_05
+  label: good
+  expected_min: 86
+  expected_max: 100
+  content: |
+    判断一个递归定义是否合理，可以看三点：是否明确说明了问题本身是什么，
+    是否存在可以直接求解的 base case，是否保证每次递归都把问题规模继续缩小。
+    例如 factorial(n) 在 n==0 时返回 1，其余情况返回 n*factorial(n-1)。
+    这说明递归不是机械重复，而是有边界、有推进方向的分解过程。
+
+- id: grading_eval_good_07
+  label: good
+  expected_min: 85
+  expected_max: 100
+  content: |
+    一个高质量的递归说明至少应包括：递归的定义、base case、recursive case、以及参数如何趋近 base case。
+    例如 factorial 函数中，base case 是 n==0 返回 1，recursive case 是返回 n*factorial(n-1)。
+    因为 n 每次减 1，所以调用层层收敛并最终结束；否则就会导致无限递归。
+
+- id: grading_eval_good_08
+  label: good
+  expected_min: 84
+  expected_max: 100
+  content: |
+    Recursion solves a problem by reducing it to a smaller subproblem of the same kind.
+    A complete recursive definition needs a base case and a recursive case.
+    For example, factorial(0)=1 is the base case, and factorial(n)=n*factorial(n-1) is the recursive case.
+    Because n decreases each time, the calls converge to the base case; otherwise the program may recurse forever and overflow the stack.
+
+- id: grading_eval_good_09
+  label: good
+  expected_min: 85
+  expected_max: 100
+  content: |
+    The key idea of recursion is not simply that a function calls itself, but that each call solves a smaller instance of the same problem.
+    A sound recursive design must specify a base case to stop and a recursive step to reduce problem size.
+    In tree traversal, for example, reaching an empty node is the base case, and visiting child nodes is the recursive step.
+    Without a stopping condition or size reduction, recursion will not converge.
+
+- id: grading_eval_good_10
+  label: good
+  expected_min: 84
+  expected_max: 100
+  content: |
+    A high-quality explanation of recursion should include the definition, the base case, the recursive case, and the reason the parameters approach termination.
+    In factorial, the base case is n==0 returning 1, and the recursive case is n*factorial(n-1).
+    Since n becomes smaller on each call, the computation eventually reaches the base case and returns safely.
+
+- id: grading_eval_good_11
+  label: good
+  expected_min: 86
+  expected_max: 100
+  content: |
+    Recursion is a problem-solving method in which a function handles a problem by delegating a smaller problem of the same form to itself.
+    To be correct, the definition must contain a base case, a recursive case, and a guarantee that each step moves toward the base case.
+    Hanoi Tower, factorial, and tree traversal all follow this structure.
+    If the base case is missing or the problem size does not shrink, the recursion may never terminate.

@@ -1,0 +1,171 @@
+{
+  "metric": "score_band_match_accuracy",
+  "course_id": 3,
+  "cases_path": "D:\\course\\SEME\\edu-ai\\data\\test\\grading-eval-cases-stack-queue-12cases-2026-06-30.yaml",
+  "assignment": {
+    "title": "Draft grading evaluation: stack vs queue basics",
+    "description": "Explain the difference between a stack and a queue. The answer should cover the access order, core operations, and at least one suitable use case or example for each structure.\n",
+    "assignment_type": "text",
+    "max_score": 100,
+    "rubric": {
+      "dimensions": [
+        {
+          "name": "correctness",
+          "max_score": 60,
+          "criteria": "Correctly explain LIFO vs FIFO and the basic operations of both structures."
+        },
+        {
+          "name": "completeness",
+          "max_score": 25,
+          "criteria": "Cover access order, operations, and at least one example or use case for each."
+        },
+        {
+          "name": "clarity",
+          "max_score": 15,
+          "criteria": "Explain the contrast clearly with coherent wording and structure."
+        }
+      ]
+    },
+    "reference_answer": "A stack follows LIFO and typically supports push, pop, and top/peek. It is suitable for function-call stacks, undo operations, and expression evaluation. A queue follows FIFO and typically supports enqueue, dequeue, and front/peek. It is suitable for task scheduling, BFS traversal, buffering, and waiting-line style processing.\n",
+    "knowledge_points": []
+  },
+  "total_cases": 12,
+  "passed_cases": 12,
+  "accuracy": 1.0,
+  "by_label": {
+    "bad": {
+      "total": 4,
+      "passed": 4
+    },
+    "mid": {
+      "total": 4,
+      "passed": 4
+    },
+    "good": {
+      "total": 4,
+      "passed": 4
+    }
+  },
+  "results": [
+    {
+      "id": "grading_eval_sq_bad_01",
+      "label": "bad",
+      "expected_min": 0.0,
+      "expected_max": 40.0,
+      "actual_score": 15.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission fails to address the core differences between stacks and queues, incorrectly stating they are 'basically the same' and that their order 'has no essential difference.' This demonstrates a fundamental misunderstanding of LIFO vs FIFO principles. The answer lacks any mention of core operations or use cases, which are required components according to the assignment description."
+    },
+    {
+      "id": "grading_eval_sq_bad_02",
+      "label": "bad",
+      "expected_min": 0.0,
+      "expected_max": 45.0,
+      "actual_score": 15.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission contains fundamental misunderstandings about stack and queue data structures. It incorrectly describes the access order (stating stack is FIFO and queue is LIFO, which is the opposite of correct) and claims they are mostly interchangeable, which is not accurate. The answer fails to cover the core operations of either structure and provides no examples or use cases."
+    },
+    {
+      "id": "grading_eval_sq_bad_03",
+      "label": "bad",
+      "expected_min": 0.0,
+      "expected_max": 42.0,
+      "actual_score": 25.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission contains significant misunderstandings about both stack and queue data structures. It incorrectly states that queues are used for recursion and that stacks are for queuing, which reverses their actual purposes. The explanation of operations is also incorrect, as both structures do distinguish which end elements are removed from. The answer lacks clarity and contains factual errors that demonstrate a fundamental misunderstanding of these basic data structures."
+    },
+    {
+      "id": "grading_eval_sq_bad_04",
+      "label": "bad",
+      "expected_min": 0.0,
+      "expected_max": 45.0,
+      "actual_score": 15.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission incorrectly states that stacks and queues are essentially the same with only different names, which fundamentally misunderstands their core principles. The answer fails to explain the critical differences between LIFO and FIFO access patterns, core operations, and use cases. This represents a significant conceptual misunderstanding of basic data structures."
+    },
+    {
+      "id": "grading_eval_sq_mid_01",
+      "label": "mid",
+      "expected_min": 58.0,
+      "expected_max": 80.0,
+      "actual_score": 65.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission correctly identifies the fundamental difference between stack and queue (LIFO vs FIFO) and mentions the basic operations for each structure. However, it lacks the required examples or use cases for both data structures, which is a significant omission according to the assignment requirements. The explanation is concise but could be clearer in contrasting the two structures."
+    },
+    {
+      "id": "grading_eval_sq_mid_02",
+      "label": "mid",
+      "expected_min": 60.0,
+      "expected_max": 82.0,
+      "actual_score": 60.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission correctly identifies the fundamental difference between stack (LIFO) and queue (FIFO) data structures. However, it lacks completeness by not providing a suitable example for stacks, and the explanation is somewhat brief without covering the core operations of either structure."
+    },
+    {
+      "id": "grading_eval_sq_mid_03",
+      "label": "mid",
+      "expected_min": 60.0,
+      "expected_max": 82.0,
+      "actual_score": 70.0,
+      "pass": true,
+      "source": "llm+review",
+      "overall_comment": "The submission correctly identifies the fundamental difference between stack (LIFO) and queue (FIFO) structures and mentions their core operations. However, it lacks sufficient completeness in covering examples or use cases for both structures, and the explanation could be more detailed and structured."
+    },
+    {
+      "id": "grading_eval_sq_mid_04",
+      "label": "mid",
+      "expected_min": 58.0,
+      "expected_max": 80.0,
+      "actual_score": 70.0,
+      "pass": true,
+      "source": "llm+review",
+      "overall_comment": "The submission correctly identifies the fundamental difference between stack and queue (LIFO vs FIFO) and provides basic examples. However, it lacks sufficient detail on core operations and could benefit from more comprehensive explanations and clearer structure."
+    },
+    {
+      "id": "grading_eval_sq_good_01",
+      "label": "good",
+      "expected_min": 84.0,
+      "expected_max": 100.0,
+      "actual_score": 100.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission provides a comprehensive and accurate explanation of the differences between stacks and queues, covering all required aspects with clear and concise language."
+    },
+    {
+      "id": "grading_eval_sq_good_02",
+      "label": "good",
+      "expected_min": 85.0,
+      "expected_max": 100.0,
+      "actual_score": 100.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The student has provided an excellent answer that fully meets all requirements of the assignment. The explanation is clear, accurate, and covers all required aspects of both stack and queue data structures."
+    },
+    {
+      "id": "grading_eval_sq_good_03",
+      "label": "good",
+      "expected_min": 84.0,
+      "expected_max": 100.0,
+      "actual_score": 85.0,
+      "pass": true,
+      "source": "llm+review",
+      "overall_comment": "The submission correctly identifies the fundamental difference between stacks and queues (LIFO vs FIFO) and describes their basic operations. It provides a concise explanation of the access disciplines and mentions appropriate use cases for each structure. While the answer is conceptually correct and clear, it could benefit from more specific examples to fully demonstrate understanding and meet the completeness criteria."
+    },
+    {
+      "id": "grading_eval_sq_good_04",
+      "label": "good",
+      "expected_min": 86.0,
+      "expected_max": 100.0,
+      "actual_score": 95.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission provides a clear and concise explanation of the differences between stacks and queues, covering all required aspects including access order (LIFO vs FIFO), core operations, and relevant use cases. The explanation is accurate and well-structured."
+    }
+  ]
+}
