@@ -50,7 +50,8 @@ Target statement under review:
 - `backend/tests/test_exercise_analytics_loop.py`
 - `backend/tests/test_exercise_generation_normalization.py`
 - `backend/tests/test_grading_payload_standardization.py`
-- `backend/tests/test_m4_acceptance_baselines.py`
+- `backend/tests/test_exercise_analytics_loop.py`
+- `backend/tests/test_chat_route_contracts.py`
 - `backend/tests/test_resource_processing_guards.py`
 
 ### Deployment and performance evidence
@@ -208,7 +209,8 @@ Representative strong evidence:
 - Exercise/analytics learning loop:
   - `backend/tests/test_exercise_analytics_loop.py`
 - M4 acceptance baselines:
-  - `backend/tests/test_m4_acceptance_baselines.py`
+  - `backend/tests/test_exercise_analytics_loop.py`
+  - `backend/tests/test_chat_route_contracts.py`
 - Grading payload standardization:
   - `backend/tests/test_grading_payload_standardization.py`
 - Resource processing guards:

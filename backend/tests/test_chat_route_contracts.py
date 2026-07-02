@@ -1,4 +1,6 @@
+import asyncio
 import json
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -215,6 +217,34 @@ async def test_send_message_stream_rolls_back_when_stream_fails(monkeypatch):
     assert events[1] == {"type": "error", "detail": "stream failed"}
     assert db.commit_calls == 1
     assert db.rollback_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_send_message_stream_small_concurrency_baseline(monkeypatch):
+    async def fake_chat_stream(self, query, history=None, context=None):
+        yield "hello"
+
+    monkeypatch.setattr(chat.QAAgent, "chat_stream", fake_chat_stream)
+
+    async def run_once(index: int) -> str:
+        agent = make_agent()
+        db = FakeDB(results=[FakeResult(scalar=agent), FakeResult(scalars=[])])
+        response = await chat.send_message_stream(
+            data=chat.ChatRequest(agent_id=agent.id, course_id=agent.course_id, message=f"q-{index}"),
+            db=db,
+            user=make_user(index + 1),
+        )
+        payload = b""
+        async for chunk in response.body_iterator:
+            payload += chunk.encode("utf-8") if isinstance(chunk, str) else chunk
+        return payload.decode("utf-8")
+
+    started = time.perf_counter()
+    outputs = await asyncio.gather(*(run_once(index) for index in range(5)))
+    elapsed = time.perf_counter() - started
+
+    assert all('"type": "done"' in output for output in outputs)
+    assert elapsed < 2.0
 
 
 @pytest.mark.asyncio

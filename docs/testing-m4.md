@@ -5,7 +5,7 @@
 - `cd backend`
 - `pytest tests/test_chat_route_contracts.py tests/test_chat_streaming_support.py`
 - `pytest tests/test_agent_platform_contracts.py`
-- `pytest tests/test_exercise_analytics_loop.py tests/test_m4_acceptance_baselines.py tests/test_exercise_generation_normalization.py`
+- `pytest tests/test_exercise_analytics_loop.py tests/test_chat_route_contracts.py tests/test_exercise_generation_normalization.py`
 
 这些测试不依赖真实外部平台 SDK，也不依赖真实 LLM 网络调用，主要通过假数据和 monkeypatch 验证 M4 核心链路。
 
