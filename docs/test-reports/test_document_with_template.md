@@ -2,23 +2,23 @@
 
 ## 1. 项目信息
 
-| 项目项 | 内容 |
-| --- | --- |
-| 项目名称 | EduAI |
-| 文档名称 | 最终测试文档 |
-| 文档日期 | 2026-06-30 |
-| 文档状态 | 模板化底稿 |
-| 对应需求基线 | `docs/rbs-wbs-schedule+gantt.md` 中最终 RBS |
-| 测试对象 | 后端服务、课程问答链路、作业批改链路、练习与分析链路、平台模拟接入链路、部署与性能验证材料 |
-| 覆盖口径 | requirement coverage / evidence coverage |
-| 作者 | `{待补}` |
-| 审核人 | `{待补}` |
+| 项目项       | 内容                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------ |
+| 项目名称     | EduAI                                                                                      |
+| 文档名称     | 最终测试文档                                                                               |
+| 文档日期     | 2026-06-30                                                                                 |
+| 文档状态     | 模板化底稿                                                                                 |
+| 对应需求基线 | `docs/rbs-wbs-schedule+gantt.md` 中最终 RBS                                                |
+| 测试对象     | 后端服务、课程问答链路、作业批改链路、练习与分析链路、平台模拟接入链路、部署与性能验证材料 |
+| 覆盖口径     | requirement coverage / evidence coverage                                                   |
+| 作者         | `{待补}`                                                                                   |
+| 审核人       | `{待补}`                                                                                   |
 
 ## 2. 引言
 
-本文基于 [docs/rbs-wbs-schedule+gantt.md](/D:/course/SEME/edu-ai/docs/rbs-wbs-schedule+gantt.md) 中的最终 RBS，对 EduAI 当前仓库中的自动化测试结果、功能验证记录、专项评测结果、部署验证记录和性能压测结果进行整理，形成面向最终提交的需求级测试覆盖文档。
+本文基于 [docs/rbs-wbs-schedule+gantt.md](/D:/course/SEME/edu-ai/docs/rbs-wbs-schedule+gantt.md) 中的最终 RBS，整理 EduAI 仓库中的自动化测试结果、功能验证记录、专项评测结果、部署验证记录和性能压测结果，形成面向最终提交的需求级测试覆盖文档。
 
-本文的目标不是声明形式化代码覆盖率，而是建立“最终 RBS 需求 -> 测试/验证 -> 证据 -> 当前结论”的闭环，以支撑课程要求中的 complete test coverage for all requirements specified in the final RBS。
+本文主要内容是建立“最终 RBS 需求 -> 测试/验证 -> 证据 -> 结论”的闭环，来满足课程对最终 RBS 全部需求进行测试覆盖的要求。
 
 ## 3. 测试范围
 
@@ -28,11 +28,11 @@
 - 每条需求至少映射到一种真实证据。
 - 证据类型包括自动化测试、功能验证、专项评测、部署验证、性能压测和必要文档证据。
 
-### 3.2 不在本文声明范围内的内容
+### 3.2 内容范围声明
 
-- 本文不声明 `pytest-cov` 意义上的形式化代码覆盖率完整。
-- 本文不声明问答、批改或性能能力已在所有课程、所有题型、所有负载条件下普遍验证成立。
-- 本文不把单次 500 用户读链路压测解释为 500 用户 AI 全链路零失败证明。
+- 不声明 `pytest-cov` 意义上的形式化代码覆盖率完整。
+- 不声明问答、批改或性能能力已在所有课程、所有题型、所有负载条件下普遍成立。
+- 单次 500 用户读链路压测不等同于 500 用户 AI 全链路零失败的验证。
 
 ## 4. 测试策略
 
@@ -106,52 +106,52 @@ pytest backend/tests/test_document_and_grading_format_support.py -q --basetemp=D
 ### 6.2 自动化测试说明
 
 - 当前自动化测试以后端链路为主。
-- 前端相关需求的主要证据来自页面实现、角色入口验证、功能链路验证和最终需求覆盖矩阵，而不是独立前端自动化测试框架。
+- 前端相关需求的主要证据来自页面实现、角色入口验证、功能链路验证和最终需求覆盖矩阵，而非独立的前端自动化测试框架。
 
 ## 7. 需求覆盖矩阵
 
-| 需求编号 | 需求摘要 | 关键测试用例 / 证据文件 | 状态 | 当前判断 |
-| --- | --- | --- | --- | --- |
-| `R1111` | 可复用的问答 / 批改 / 练习 Agent 模板 | `test_normalize_agent_grading_result_contract`；`test_generate_targeted_exercises_uses_weak_points_metadata`；`test_grade_with_llm_delegates_to_grading_agent_and_keeps_worker_contract` | yes | 已按三类 Agent 后端模板能力关闭 |
-| `R1211` | 统一 Provider 封装与模型切换 | `test_publish_workflow_marks_agent_active_and_applies_runtime_mapping`；`test_build_agent_runtime_config_infers_provider_from_llm_model`；`test_grade_with_llm_uses_course_agent_provider_and_model` | yes | 已按 provider/model 映射与推断关闭 |
-| `R1311` | 教师/学生不同入口 | `test_platform_mock_endpoints_return_stable_payloads`；`docs/course-agent-scenarios.md`；`frontend/src/components/Layout/MainLayout.tsx` | yes | 已按角色入口关闭 |
-| `R2111` | PDF / Word / PPT 内容提取 | `test_parse_resource_content_extracts_text_from_rbs_formats`；`test_unsupported_resource_type_is_rejected`；`test_blank_docx_content_has_actionable_error` | yes | 已由文档解析测试关闭 |
-| `R2121` | 课程资料切分、Embedding 与向量召回 | `test_qa_agent_uses_configured_top_k_for_rag`；`backend/script/test_rag_retrieval.py`；`backend/agent_core/rag_chain.py` | yes | 已按 RAG 检索链路关闭 |
-| `R2131` | 检索片段参与答案生成并提供 grounding | `test_build_qa_system_prompt_requires_grounded_answer`；`test_qa_agent_chat_stream_uses_rag_context`；`datastructure-qna-eval-supplement-2026-06-29.md` | yes | 已按 RAG grounding 范围关闭 |
-| `R2141` | 课程级资源与会话隔离 | `test_exercise_pool_rejects_unenrolled_student`；`test_send_message_rejects_forbidden_course_access`；`docs/course-agent-scenarios.md` | yes | 已关闭 |
-| `R3111` | 会话上下文连续性 | `test_send_message_stream_success`；`test_send_message_success`；`M4-测试计划-v0.4.0.md` | yes | 已关闭 |
-| `R3121` | 优先依据课程知识库回答 | `test_build_qa_system_prompt_requires_grounded_answer`；`test_qa_agent_uses_configured_top_k_for_rag`；`datastructure-qna-eval-supplement-2026-06-29.md` | yes | 已由真实课程问答评测关闭 |
-| `R3131` | 按课程和用户保存会话历史 | `test_send_message_success`；`test_send_message_stream_success`；`M4-测试证据记录-v0.4.0.md` | yes | 已关闭 |
-| `R4111` | 文本输入与文档附件进入统一评分链路 | `test_build_grading_content_uses_supported_attachment_formats`；`test_standardize_grading_payload_normalizes_core_fields`；`docs/M3-A-grading-samples.md` | yes | 已按文档附件文本化评分链路关闭 |
-| `R4121` | 教师附加参考答案和评分标准 | `test_build_grading_dimensions_from_structured_rubric`；`test_reference_answer_exact_match_applies_full_score_rule`；`test_reference_answer_explicit_answer_pattern_applies_full_score_rule` | yes | 已按进入批改链路关闭 |
-| `R4211` | 结构化批注输出 | `test_normalize_agent_grading_result_contract`；`test_standardize_grading_payload_normalizes_annotations_and_knowledge_scores`；`M4-测试证据记录-v0.4.0.md` | yes | 已关闭 |
-| `R5111` | 薄弱点分析 | `test_create_attempt_updates_mastery_after_successful_answer`；`test_submit_attempt_returns_alert_refresh_metadata`；`test_refresh_learning_alerts_creates_weak_alert_and_resolves_recovered_one` | yes | 已关闭 |
-| `R5211` | 测评-批改-练习闭环 | `test_learning_loop_smoke_from_attempt_to_alert_to_next_exercise`；`2026-05-26-M3-end-to-end-test-record.md` | yes | 已关闭 |
-| `R6111` | 模拟嵌入式接入 | `test_platform_connection_requires_platform_specific_config`；`test_platform_mock_endpoints_return_stable_payloads`；`platform-adapter-simulated.md` | yes | 已按模拟平台集成关闭 |
-| `R6121` | 课程问答 Widget 嵌入 | `M4-测试计划-v0.4.0.md`；`M4-测试证据记录-v0.4.0.md`；`2026-04-22-系统测试报告-v0.1.0.md` | yes | 已按手工验证和文档证据关闭 |
-| `R6211` | 可视化组件及参数配置 | `test_validate_workflow_dag_reports_missing_required_nodes`；`test_build_agent_runtime_config_from_workflow_maps_supported_nodes`；`test_publish_workflow_marks_agent_active_and_applies_runtime_mapping` | yes | 已按当前可视化配置范围关闭 |
-| `R7111` | 并发读链路与核心业务链路压测验证 | `loadtest-500-monitored2m-final-20260628_stats.csv`；`loadtest-business-clean-15u-20260628_stats.csv` | yes | 500 用户读链路低失败率基线 + 小规模 AI 业务链路零失败基线 |
-| `R7121` | 问答与批改准确率 >= 90% | `datastructure-qna-eval-supplement-2026-06-29.md`；`grading-eval-local-rerun-25cases-2026-06-29.json`；`grading-eval-stack-queue-12cases-2026-06-30.json` | yes | 当前测试范围内关闭 |
-| `R7131` | 隔离、批量题集、异常、性能与并发测试 | `test_exercise_pool_rejects_unenrolled_student`；`test_generate_targeted_exercises_uses_weak_points_metadata`；`test_submit_assignment_returns_clear_upload_failure_prompt`；`loadtest-500-monitored2m-final-20260628_stats.csv` | yes | 已关闭 |
-| `R7211` | 教师与学生权限隔离 | `test_exercise_attempt_rejects_teacher`；`test_send_message_rejects_forbidden_course_access`；`test_alerts_student_rejects_unenrolled_course` | yes | 已关闭 |
-| `R7221` | 跨课程复用的 Agent 基础架构 | `test_build_agent_runtime_config_from_workflow_maps_supported_nodes`；`test_publish_workflow_marks_agent_active_and_applies_runtime_mapping`；`docs/architecture-diagrams.md` | yes | 已关闭 |
-| `R7231` | 上传、worker、LLM、无资料、无 Agent 异常提示 | `test_submit_assignment_returns_clear_upload_failure_prompt`；`test_get_grading_result_returns_worker_failure_prompt`；`test_blank_pdf_content_has_actionable_error_without_ocr`；`test_send_message_rejects_inactive_agent` | yes | 已关闭 |
-| `R811` | 以通义千问作为主要模型 | `test_build_agent_runtime_config_infers_provider_from_llm_model`；`test_publish_workflow_marks_agent_active_and_applies_runtime_mapping`；`docs/rbs-wbs-schedule+gantt.md` | yes | 已关闭 |
-| `R821` | 仅实现模拟平台集成 | `test_platform_connection_requires_platform_specific_config`；`test_platform_mock_endpoints_return_stable_payloads`；`platform-adapter-simulated.md` | yes | 已关闭 |
-| `R831` | 项目于 2026-06-14 前交付 | `docs/final-summary-report-2026-06-14.md` | yes | 作为文档合规证据关闭 |
+| 需求编号 | 需求摘要                                     | 关键测试用例 / 证据文件                                                                                                                                                                                                          | 状态 | 当前判断                                                  |
+| -------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | --------------------------------------------------------- |
+| `R1111`  | 可复用的问答 / 批改 / 练习 Agent 模板        | `test_normalize_agent_grading_result_contract`；`test_generate_targeted_exercises_uses_weak_points_metadata`；`test_grade_with_llm_delegates_to_grading_agent_and_keeps_worker_contract`                                         | yes  | 由问答/批改/练习三类 Agent 后端模板覆盖                   |
+| `R1211`  | 统一 Provider 封装与模型切换                 | `test_publish_workflow_marks_agent_active_and_applies_runtime_mapping`；`test_build_agent_runtime_config_infers_provider_from_llm_model`；`test_grade_with_llm_uses_course_agent_provider_and_model`                             | yes  | 由 provider/model 映射与推断机制覆盖                      |
+| `R1311`  | 教师/学生不同入口                            | `test_platform_mock_endpoints_return_stable_payloads`；`docs/course-agent-scenarios.md`；`frontend/src/components/Layout/MainLayout.tsx`                                                                                         | yes  | 由教师/学生角色入口实现                                   |
+| `R2111`  | PDF / Word / PPT 内容提取                    | `test_parse_resource_content_extracts_text_from_rbs_formats`；`test_unsupported_resource_type_is_rejected`；`test_blank_docx_content_has_actionable_error`                                                                       | yes  | 由文档解析测试覆盖                                        |
+| `R2121`  | 课程资料切分、Embedding 与向量召回           | `test_qa_agent_uses_configured_top_k_for_rag`；`backend/script/test_rag_retrieval.py`；`backend/agent_core/rag_chain.py`                                                                                                         | yes  | 由 RAG 检索链路覆盖                                       |
+| `R2131`  | 检索片段参与答案生成并提供 grounding         | `test_build_qa_system_prompt_requires_grounded_answer`；`test_qa_agent_chat_stream_uses_rag_context`；`datastructure-qna-eval-supplement-2026-06-29.md`                                                                          | yes  | 由 RAG grounding 机制覆盖                                 |
+| `R2141`  | 课程级资源与会话隔离                         | `test_exercise_pool_rejects_unenrolled_student`；`test_send_message_rejects_forbidden_course_access`；`docs/course-agent-scenarios.md`                                                                                           | yes  | 由课程隔离测试覆盖                                        |
+| `R3111`  | 会话上下文连续性                             | `test_send_message_stream_success`；`test_send_message_success`；`M4-测试计划-v0.4.0.md`                                                                                                                                         | yes  | 由会话历史与流式测试覆盖                                  |
+| `R3121`  | 优先依据课程知识库回答                       | `test_build_qa_system_prompt_requires_grounded_answer`；`test_qa_agent_uses_configured_top_k_for_rag`；`datastructure-qna-eval-supplement-2026-06-29.md`                                                                         | yes  | 由真实课程问答评测验证                                    |
+| `R3131`  | 按课程和用户保存会话历史                     | `test_send_message_success`；`test_send_message_stream_success`；`M4-测试证据记录-v0.4.0.md`                                                                                                                                     | yes  | 由会话历史持久化测试覆盖                                  |
+| `R4111`  | 文本输入与文档附件进入统一评分链路           | `test_build_grading_content_uses_supported_attachment_formats`；`test_standardize_grading_payload_normalizes_core_fields`；`docs/M3-A-grading-samples.md`                                                                        | yes  | 由文档附件文本化评分链路覆盖                              |
+| `R4121`  | 教师附加参考答案和评分标准                   | `test_build_grading_dimensions_from_structured_rubric`；`test_reference_answer_exact_match_applies_full_score_rule`；`test_reference_answer_explicit_answer_pattern_applies_full_score_rule`                                     | yes  | 由结构化评分标准进入批改链路覆盖                          |
+| `R4211`  | 结构化批注输出                               | `test_normalize_agent_grading_result_contract`；`test_standardize_grading_payload_normalizes_annotations_and_knowledge_scores`；`M4-测试证据记录-v0.4.0.md`                                                                      | yes  | 由批注输出标准化测试覆盖                                  |
+| `R5111`  | 薄弱点分析                                   | `test_create_attempt_updates_mastery_after_successful_answer`；`test_submit_attempt_returns_alert_refresh_metadata`；`test_refresh_learning_alerts_creates_weak_alert_and_resolves_recovered_one`                                | yes  | 由薄弱点分析与告警测试覆盖                                |
+| `R5211`  | 测评-批改-练习闭环                           | `test_learning_loop_smoke_from_attempt_to_alert_to_next_exercise`；`2026-05-26-M3-end-to-end-test-record.md`                                                                                                                     | yes  | 由学习闭环冒烟测试覆盖                                    |
+| `R6111`  | 模拟嵌入式接入                               | `test_platform_connection_requires_platform_specific_config`；`test_platform_mock_endpoints_return_stable_payloads`；`platform-adapter-simulated.md`                                                                             | yes  | 由模拟平台集成实现                                        |
+| `R6121`  | 课程问答 Widget 嵌入                         | `M4-测试计划-v0.4.0.md`；`M4-测试证据记录-v0.4.0.md`；`2026-04-22-系统测试报告-v0.1.0.md`                                                                                                                                        | yes  | 由手工验证与文档证据覆盖                                  |
+| `R6211`  | 可视化组件及参数配置                         | `test_validate_workflow_dag_reports_missing_required_nodes`；`test_build_agent_runtime_config_from_workflow_maps_supported_nodes`；`test_publish_workflow_marks_agent_active_and_applies_runtime_mapping`                        | yes  | 由当前可视化配置范围实现                                  |
+| `R7111`  | 并发读链路与核心业务链路压测验证             | `loadtest-500-monitored2m-final-20260628_stats.csv`；`loadtest-business-clean-15u-20260628_stats.csv`                                                                                                                            | yes  | 500 用户读链路低失败率基线 + 小规模 AI 业务链路零失败基线 |
+| `R7121`  | 问答与批改准确率 >= 90%                      | `datastructure-qna-eval-supplement-2026-06-29.md`；`grading-eval-local-rerun-25cases-2026-06-29.json`；`grading-eval-stack-queue-12cases-2026-06-30.json`                                                                        | yes  | 在当前评测集范围内达标                                    |
+| `R7131`  | 隔离、批量题集、异常、性能与并发测试         | `test_exercise_pool_rejects_unenrolled_student`；`test_generate_targeted_exercises_uses_weak_points_metadata`；`test_submit_assignment_returns_clear_upload_failure_prompt`；`loadtest-500-monitored2m-final-20260628_stats.csv` | yes  | 由隔离/批量/异常/性能测试覆盖                             |
+| `R7211`  | 教师与学生权限隔离                           | `test_exercise_attempt_rejects_teacher`；`test_send_message_rejects_forbidden_course_access`；`test_alerts_student_rejects_unenrolled_course`                                                                                    | yes  | 由权限隔离测试覆盖                                        |
+| `R7221`  | 跨课程复用的 Agent 基础架构                  | `test_build_agent_runtime_config_from_workflow_maps_supported_nodes`；`test_publish_workflow_marks_agent_active_and_applies_runtime_mapping`；`docs/architecture-diagrams.md`                                                    | yes  | 由 Agent 基础架构复用测试覆盖                             |
+| `R7231`  | 上传、worker、LLM、无资料、无 Agent 异常提示 | `test_submit_assignment_returns_clear_upload_failure_prompt`；`test_get_grading_result_returns_worker_failure_prompt`；`test_blank_pdf_content_has_actionable_error_without_ocr`；`test_send_message_rejects_inactive_agent`     | yes  | 由异常提示路径测试覆盖                                    |
+| `R811`   | 以通义千问作为主要模型                       | `test_build_agent_runtime_config_infers_provider_from_llm_model`；`test_publish_workflow_marks_agent_active_and_applies_runtime_mapping`；`docs/rbs-wbs-schedule+gantt.md`                                                       | yes  | 由 provider 推断与发布测试覆盖                            |
+| `R821`   | 仅实现模拟平台集成                           | `test_platform_connection_requires_platform_specific_config`；`test_platform_mock_endpoints_return_stable_payloads`；`platform-adapter-simulated.md`                                                                             | yes  | 由模拟平台集成测试覆盖                                    |
+| `R831`   | 项目于 2026-06-14 前交付                     | `docs/final-summary-report-2026-06-14.md`                                                                                                                                                                                        | yes  | 以文档合规证据支持                                        |
 
 ## 8. 测试执行汇总
 
-| 类别 | 当前结果 | 主证据 |
-| --- | --- | --- |
-| 后端自动化测试基线 | `pytest backend/tests -q = 100 passed` | `backend/tests` |
-| 文档与评分格式补充测试 | `9 passed` | `test_document_and_grading_format_support.py` |
-| 数据结构课程问答评测 | `45 / 45 = 1.0` | [datastructure-qna-eval-supplement-2026-06-29.md](/D:/course/SEME/edu-ai/docs/test-reports/datastructure-qna-eval-supplement-2026-06-29.md) |
-| 本地历史问答评测 | `24 / 25 = 0.96` | [datastructure-eval-results.json](/D:/course/SEME/edu-ai/data/dataStructure/datastructure-eval-results.json) |
-| 递归题批改评测 | `23 / 25 = 0.92` | [grading-eval-local-rerun-25cases-2026-06-29.json](/D:/course/SEME/edu-ai/docs/test-reports/grading-eval-local-rerun-25cases-2026-06-29.json) |
-| 非递归概念题批改评测 | `11 / 12 = 0.9167` | [grading-eval-stack-queue-12cases-2026-06-30.json](/D:/course/SEME/edu-ai/docs/test-reports/grading-eval-stack-queue-12cases-2026-06-30.json) |
-| 500 用户读链路压测 | `207756` 次请求，`405` 次失败，失败率约 `0.195%` | [loadtest-500-monitored2m-final-20260628_stats.csv](/D:/course/SEME/edu-ai/docs/test-reports/autodl-20260628/round2/loadtest-500-monitored2m-final-20260628_stats.csv) |
-| 15 用户 AI 业务链路压测 | 聚合失败数 `0` | [loadtest-business-clean-15u-20260628_stats.csv](/D:/course/SEME/edu-ai/docs/test-reports/autodl-20260628/round2/loadtest-business-clean-15u-20260628_stats.csv) |
+| 类别                    | 当前结果                                         | 主证据                                                                                                                                                                 |
+| ----------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 后端自动化测试基线      | `pytest backend/tests -q = 100 passed`           | `backend/tests`                                                                                                                                                        |
+| 文档与评分格式补充测试  | `9 passed`                                       | `test_document_and_grading_format_support.py`                                                                                                                          |
+| 数据结构课程问答评测    | `45 / 45 = 1.0`                                  | [datastructure-qna-eval-supplement-2026-06-29.md](/D:/course/SEME/edu-ai/docs/test-reports/datastructure-qna-eval-supplement-2026-06-29.md)                            |
+| 本地历史问答评测        | `24 / 25 = 0.96`                                 | [datastructure-eval-results.json](/D:/course/SEME/edu-ai/data/dataStructure/datastructure-eval-results.json)                                                           |
+| 递归题批改评测          | `23 / 25 = 0.92`                                 | [grading-eval-local-rerun-25cases-2026-06-29.json](/D:/course/SEME/edu-ai/docs/test-reports/grading-eval-local-rerun-25cases-2026-06-29.json)                          |
+| 非递归概念题批改评测    | `11 / 12 = 0.9167`                               | [grading-eval-stack-queue-12cases-2026-06-30.json](/D:/course/SEME/edu-ai/docs/test-reports/grading-eval-stack-queue-12cases-2026-06-30.json)                          |
+| 500 用户读链路压测      | `207756` 次请求，`405` 次失败，失败率约 `0.195%` | [loadtest-500-monitored2m-final-20260628_stats.csv](/D:/course/SEME/edu-ai/docs/test-reports/autodl-20260628/round2/loadtest-500-monitored2m-final-20260628_stats.csv) |
+| 15 用户 AI 业务链路压测 | 聚合失败数 `0`                                   | [loadtest-business-clean-15u-20260628_stats.csv](/D:/course/SEME/edu-ai/docs/test-reports/autodl-20260628/round2/loadtest-business-clean-15u-20260628_stats.csv)       |
 
 ## 9. 代表性测试用例
 
@@ -166,13 +166,13 @@ pytest backend/tests/test_document_and_grading_format_support.py -q --basetemp=D
 
 ## 10. 缺陷与问题汇总
 
-### 10.1 当前无阻塞提交的未闭合需求缺口
+### 10.1 未闭合需求缺口
 
-- 按当前最终 RBS 口径，全部叶子需求均已有对应证据并可关闭。
+- 按最终 RBS，全部叶子需求均有对应证据，无阻塞提交的缺口。
 
-### 10.2 当前文档与测试边界说明
+### 10.2 文档与测试边界说明
 
-- 当前仓库未提供持久化形式化代码覆盖率报告。
+- 仓库未提供持久化的形式化代码覆盖率报告。
 - 前端相关需求未以独立前端自动化测试框架作为主证据，而是通过页面实现、角色入口验证、功能链路验证和需求矩阵闭环。
 
 ## 11. 基于风险的测试说明
@@ -207,13 +207,11 @@ pytest backend/tests/test_document_and_grading_format_support.py -q --basetemp=D
 
 ## 13. 测试结论
 
-基于当前最终 RBS 与已引用证据，EduAI 可以支撑“最终 RBS 中所有需求均已有测试覆盖”的提交说法。该结论的含义是需求级测试覆盖 / 证据覆盖，而不是形式化代码覆盖率完整。
+综合最终 RBS 与本文引用的证据，可认为最终 RBS 中所有需求均已具备测试覆盖。这里的“覆盖”指需求级测试覆盖与证据覆盖，而非形式化代码覆盖率完整。
 
-当前最安全的最终表述是：
-
-- EduAI 已具备较完整的后端自动化测试、核心功能验证、部署验证、性能压测证据。
-- 数据结构课程问答评测与当前固定批改评测集结果均达到 90% 以上。
-- 最终 RBS 中每个叶子需求均已映射到真实证据并可关闭。
+- 后端自动化测试、核心功能验证、部署验证与性能压测均有对应证据。
+- 数据结构课程问答评测与两组固定批改评测集准确率均达到 90% 以上。
+- 最终 RBS 中每个叶子需求均映射到真实证据。
 
 ## 14. 附录
 
