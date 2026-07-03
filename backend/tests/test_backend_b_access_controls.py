@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routes import analytics, exercises
+from core.agent_capability import CourseAgentCapability
 from core.database import get_db
 from core.security import get_current_user
 from models.user import UserRole
@@ -80,6 +81,28 @@ def make_alert(*, alert_id: int, student_id: int, course_id: int):
     )
 
 
+def make_capability(
+    *,
+    course_id: int,
+    can_chat: bool = True,
+    has_rag: bool = True,
+    has_grading: bool = True,
+    has_analytics: bool = True,
+    has_exercise: bool = True,
+):
+    return CourseAgentCapability(
+        course_id=course_id,
+        agent_id=1,
+        workflow_id=2,
+        enabled_node_types=("input_node", "llm_node", "output_node"),
+        can_chat=can_chat,
+        has_rag=has_rag,
+        has_grading=has_grading,
+        has_analytics=has_analytics,
+        has_exercise=has_exercise,
+    )
+
+
 def test_exercise_pool_requires_authentication():
     client = TestClient(make_app(db=FakeDB()))
 
@@ -118,12 +141,16 @@ def test_exercise_pool_returns_pool_for_enrolled_student():
             FakeResult(scalar=123),
             FakeResult(
                 scalars=[
-                    {
-                        "id": 5,
-                        "course_id": 1,
-                        "question": "What is a binary tree?",
-                        "created_at": datetime(2026, 6, 5, tzinfo=timezone.utc),
-                    }
+                    SimpleNamespace(
+                        id=5,
+                        course_id=1,
+                        exercise_type="choice",
+                        question="What is a binary tree?",
+                        options=[{"key": "A", "label": "Tree"}],
+                        difficulty=2,
+                        knowledge_point_ids=[7],
+                        created_at=datetime(2026, 6, 5, tzinfo=timezone.utc),
+                    )
                 ]
             ),
         ]
@@ -134,6 +161,7 @@ def test_exercise_pool_returns_pool_for_enrolled_student():
 
     assert response.status_code == 200
     assert response.json()[0]["id"] == 5
+    assert response.json()[0]["source"] == "pool"
 
 
 def test_exercise_attempt_rejects_teacher():
@@ -183,7 +211,11 @@ def test_alerts_teacher_requires_course_id():
     assert response.json()["detail"] == "course_id is required for teacher alert queries"
 
 
-def test_alerts_teacher_supports_course_and_student_filter():
+def test_alerts_teacher_supports_course_and_student_filter(monkeypatch):
+    async def fake_capability(db, *, course_id: int):
+        return make_capability(course_id=course_id, has_analytics=True)
+
+    monkeypatch.setattr(analytics, "get_published_course_agent_capability", fake_capability)
     db = FakeDB(
         results=[
             FakeResult(scalar=make_course(course_id=3, teacher_id=7)),
@@ -201,7 +233,11 @@ def test_alerts_teacher_supports_course_and_student_filter():
     assert compiled.params["student_id_1"] == 11
 
 
-def test_alerts_student_forces_own_student_id_and_checks_course_access():
+def test_alerts_student_forces_own_student_id_and_checks_course_access(monkeypatch):
+    async def fake_capability(db, *, course_id: int):
+        return make_capability(course_id=course_id, has_analytics=True)
+
+    monkeypatch.setattr(analytics, "get_published_course_agent_capability", fake_capability)
     db = FakeDB(
         results=[
             FakeResult(scalar=make_course(course_id=5, teacher_id=7)),
@@ -232,3 +268,78 @@ def test_alerts_student_rejects_unenrolled_course():
     response = client.get("/api/v1/analytics/alerts", params={"course_id": 5})
 
     assert response.status_code == 403
+
+
+def test_analytics_mastery_rejects_course_without_published_analytics(monkeypatch):
+    async def fake_capability(db, *, course_id: int):
+        return make_capability(course_id=course_id, has_analytics=False)
+
+    monkeypatch.setattr(analytics, "get_published_course_agent_capability", fake_capability)
+    db = FakeDB(
+        results=[
+            FakeResult(scalar=make_course(course_id=5, teacher_id=7)),
+            FakeResult(scalar=321),
+        ]
+    )
+    client = TestClient(make_app(db=db, user=make_user(user_id=42, role=UserRole.STUDENT)))
+
+    response = client.get("/api/v1/analytics/student/42/mastery", params={"course_id": 5})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Current course has not published analytics capability"
+
+
+def test_exercise_generate_rejects_course_without_published_exercise_capability(monkeypatch):
+    async def fake_capability(db, *, course_id: int):
+        return make_capability(course_id=course_id, has_exercise=False)
+
+    monkeypatch.setattr(exercises, "get_published_course_agent_capability", fake_capability)
+    db = FakeDB(
+        results=[
+            FakeResult(scalar=make_course(course_id=1, teacher_id=7)),
+            FakeResult(scalar=123),
+        ]
+    )
+    client = TestClient(make_app(db=db, user=make_user(user_id=42, role=UserRole.STUDENT)))
+
+    response = client.post(
+        "/api/v1/exercises/generate",
+        json={"course_id": 1, "exercise_type": "choice", "difficulty": 2, "count": 5, "use_llm": True},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Current course has not published exercise generation capability"
+
+
+def test_exercise_pool_still_available_without_published_exercise_capability(monkeypatch):
+    async def fake_capability(db, *, course_id: int):
+        return make_capability(course_id=course_id, has_exercise=False)
+
+    monkeypatch.setattr(exercises, "get_published_course_agent_capability", fake_capability)
+    db = FakeDB(
+        results=[
+            FakeResult(scalar=make_course(course_id=1, teacher_id=7)),
+            FakeResult(scalar=123),
+            FakeResult(
+                scalars=[
+                    SimpleNamespace(
+                        id=5,
+                        course_id=1,
+                        exercise_type="choice",
+                        question="What is a binary tree?",
+                        options=[{"key": "A", "label": "Tree"}],
+                        difficulty=2,
+                        knowledge_point_ids=[7],
+                        created_at=datetime(2026, 6, 5, tzinfo=timezone.utc),
+                    )
+                ]
+            ),
+            FakeResult(scalars=[]),
+        ]
+    )
+    client = TestClient(make_app(db=db, user=make_user(user_id=42, role=UserRole.STUDENT)))
+
+    response = client.get("/api/v1/exercises/pool", params={"course_id": 1})
+
+    assert response.status_code == 200
+    assert response.json()[0]["id"] == 5

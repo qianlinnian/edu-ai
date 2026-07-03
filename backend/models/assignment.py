@@ -6,6 +6,7 @@ from core.database import Base
 
 
 class SubmissionStatus(str, enum.Enum):
+    SUBMITTED = "submitted"
     PENDING = "pending"
     GRADING = "grading"
     GRADED = "graded"

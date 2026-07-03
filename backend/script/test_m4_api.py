@@ -4,7 +4,6 @@ M4 API 测试脚本
 """
 import json
 import requests
-import time
 
 BASE_URL = "http://localhost:8000/api/v1"
 

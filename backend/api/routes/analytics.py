@@ -3,24 +3,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.agent_capability import get_published_course_agent_capability
+from core.course_helpers import get_course_or_404
 from core.database import get_db
 from core.permissions import ensure_course_access, ensure_course_manager, ensure_student_or_teacher_access
 from core.security import get_current_user
 from education.analytics_engine import class_report, refresh_learning_alerts, student_mastery_overview, weak_points
-from models.course import Course
 from models.learning import LearningAlert
 from models.user import User, UserRole
 
 router = APIRouter()
-
-
-async def _get_course_or_404(db: AsyncSession, course_id: int) -> Course:
-    result = await db.execute(select(Course).where(Course.id == course_id))
-    course = result.scalar_one_or_none()
-    if course is None:
-        raise HTTPException(status_code=404, detail="Course not found")
-    return course
-
 
 async def _ensure_analytics_capability(db: AsyncSession, *, course_id: int) -> None:
     capability = await get_published_course_agent_capability(db, course_id=course_id)
@@ -35,7 +26,7 @@ async def get_student_mastery(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     await ensure_student_or_teacher_access(db, course=course, student_id=student_id, user=user)
     await _ensure_analytics_capability(db, course_id=course_id)
     return await student_mastery_overview(db, student_id=student_id, course_id=course_id)
@@ -49,7 +40,7 @@ async def get_weak_points(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     await ensure_student_or_teacher_access(db, course=course, student_id=student_id, user=user)
     await _ensure_analytics_capability(db, course_id=course_id)
     return await weak_points(db, student_id=student_id, course_id=course_id, threshold=threshold)
@@ -61,7 +52,7 @@ async def get_class_report(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     ensure_course_manager(course=course, user=user)
     await _ensure_analytics_capability(db, course_id=course_id)
     return await class_report(db, course_id=course_id)
@@ -74,7 +65,7 @@ async def refresh_alerts(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     ensure_course_manager(course=course, user=user)
     await _ensure_analytics_capability(db, course_id=course_id)
     created = await refresh_learning_alerts(db, course_id=course_id, student_id=student_id)
@@ -91,13 +82,13 @@ async def get_alerts(
     if user.role == UserRole.STUDENT:
         student_id = user.id
         if course_id is not None:
-            course = await _get_course_or_404(db, course_id)
+            course = await get_course_or_404(db, course_id)
             await ensure_course_access(db, course=course, user=user)
             await _ensure_analytics_capability(db, course_id=course_id)
     elif user.role == UserRole.TEACHER:
         if course_id is None:
             raise HTTPException(status_code=400, detail="course_id is required for teacher alert queries")
-        course = await _get_course_or_404(db, course_id)
+        course = await get_course_or_404(db, course_id)
         ensure_course_manager(course=course, user=user)
         await _ensure_analytics_capability(db, course_id=course_id)
     elif user.role != UserRole.ADMIN:

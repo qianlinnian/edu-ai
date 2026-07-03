@@ -287,6 +287,7 @@ export const assignmentAPI = {
     if (file) form.append('file', file)
     return api.post(`/assignments/${assignmentId}/submit`, form)
   },
+  enqueueGrading: (submissionId: number) => api.post(`/assignments/submissions/${submissionId}/enqueue-grading`),
   getResult: (submissionId: number) => api.get(`/assignments/submissions/${submissionId}/result`),
   getAnnotations: (submissionId: number) => api.get(`/assignments/submissions/${submissionId}/annotations`),
 }

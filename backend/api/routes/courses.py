@@ -9,13 +9,16 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
+from core.course_helpers import get_course_or_404
 from core.database import get_db
 from core.permissions import ensure_course_access, ensure_course_manager
 from core.security import get_current_user
 from core.storage import remove_object, get_minio_client, upload_bytes
 from models.agent import AgentInstance, AgentWorkflow
 from models.assignment import Assignment, GradingResult, Submission, SubmissionAnnotation
+from models.chat import ChatMessage, ChatSession
 from models.course import Course, CourseResource, Enrollment, KnowledgeRelation, KnowledgeUnit, ResourceChunk
 from core.config import get_settings
 from models.exercise import ExerciseAttempt, ExercisePool, GeneratedExercise
@@ -102,14 +105,6 @@ class KnowledgeGenerateResponse(BaseModel):
     items: list[KnowledgeUnitResponse]
 
 
-async def _get_course_or_404(db: AsyncSession, course_id: int) -> Course:
-    result = await db.execute(select(Course).where(Course.id == course_id))
-    course = result.scalar_one_or_none()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-    return course
-
-
 def _knowledge_name_from_text(text: str, index: int) -> str:
     normalized = " ".join(text.strip().split())
     if not normalized:
@@ -119,15 +114,26 @@ def _knowledge_name_from_text(text: str, index: int) -> str:
     return normalized[:28] or f"课程知识点 {index}"
 
 
+def _raise_course_conflict(exc: IntegrityError) -> None:
+    detail = str(getattr(exc, "orig", exc)).lower()
+    if "courses_code_key" in detail or "duplicate key value" in detail or "unique constraint" in detail:
+        raise HTTPException(status_code=409, detail="课程代码已存在，请使用不同的课号") from exc
+    raise exc
+
+
 @router.post("", response_model=CourseResponse)
 async def create_course(data: CourseCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     if user.role not in {UserRole.TEACHER, UserRole.ADMIN}:
         raise HTTPException(status_code=403, detail="Teacher or admin access required")
     course = Course(**data.model_dump(), teacher_id=user.id)
-    db.add(course)
-    await db.flush()
-    await db.commit()
-    await db.refresh(course)
+    try:
+        db.add(course)
+        await db.flush()
+        await db.commit()
+        await db.refresh(course)
+    except IntegrityError as exc:
+        await db.rollback()
+        _raise_course_conflict(exc)
     return course
 
 
@@ -177,7 +183,7 @@ async def get_course(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     await ensure_course_access(db, course=course, user=user)
     return course
 
@@ -186,7 +192,7 @@ async def get_course(
 async def enroll_course(course_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     if user.role != UserRole.STUDENT:
         raise HTTPException(status_code=403, detail="Only students can enroll in courses")
-    await _get_course_or_404(db, course_id)
+    await get_course_or_404(db, course_id)
     existing = await db.execute(
         select(Enrollment).where(Enrollment.student_id == user.id, Enrollment.course_id == course_id)
     )
@@ -203,7 +209,7 @@ async def enroll_course(course_id: int, db: AsyncSession = Depends(get_db), user
 async def unenroll_course(course_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     if user.role != UserRole.STUDENT:
         raise HTTPException(status_code=403, detail="Only students can unenroll from courses")
-    await _get_course_or_404(db, course_id)
+    await get_course_or_404(db, course_id)
     existing = await db.execute(
         select(Enrollment).where(Enrollment.student_id == user.id, Enrollment.course_id == course_id)
     )
@@ -223,7 +229,7 @@ async def list_course_students(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     ensure_course_manager(course=course, user=user)
     rows = (
         await db.execute(
@@ -252,14 +258,19 @@ async def update_course(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     ensure_course_manager(course=course, user=user)
-    course.name = data.name
-    course.code = data.code
-    course.description = data.description
-    course.domain = data.domain
-    await db.flush()
-    await db.refresh(course)
+    try:
+        course.name = data.name
+        course.code = data.code
+        course.description = data.description
+        course.domain = data.domain
+        await db.flush()
+        await db.commit()
+        await db.refresh(course)
+    except IntegrityError as exc:
+        await db.rollback()
+        _raise_course_conflict(exc)
     return course
 
 
@@ -269,7 +280,7 @@ async def delete_course(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     ensure_course_manager(course=course, user=user)
 
     resources = (
@@ -327,6 +338,12 @@ async def delete_course(
     agent_ids = (
         await db.execute(select(AgentInstance.id).where(AgentInstance.course_id == course_id))
     ).scalars().all()
+    session_ids = (
+        await db.execute(select(ChatSession.id).where(ChatSession.course_id == course_id))
+    ).scalars().all()
+    if session_ids:
+        await db.execute(delete(ChatMessage).where(ChatMessage.session_id.in_(session_ids)))
+        await db.execute(delete(ChatSession).where(ChatSession.id.in_(session_ids)))
     if agent_ids:
         await db.execute(delete(AgentWorkflow).where(AgentWorkflow.agent_id.in_(agent_ids)))
         await db.execute(delete(AgentInstance).where(AgentInstance.id.in_(agent_ids)))
@@ -352,7 +369,7 @@ async def create_knowledge_unit(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     ensure_course_manager(course=course, user=user)
     payload = data.model_dump()
     tags = payload.pop("tags", None)
@@ -369,7 +386,7 @@ async def list_knowledge_units(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     await ensure_course_access(db, course=course, user=user)
     result = await db.execute(
         select(KnowledgeUnit).where(KnowledgeUnit.course_id == course_id).order_by(KnowledgeUnit.order_index)
@@ -383,7 +400,7 @@ async def generate_knowledge_units(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     ensure_course_manager(course=course, user=user)
 
     existing_names = set(
@@ -432,7 +449,7 @@ async def generate_knowledge_units(
 
 @router.get("/{course_id}/resources", response_model=list[CourseResourceResponse])
 async def list_resources(course_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     await ensure_course_access(db, course=course, user=user)
 
     result = await db.execute(
@@ -448,7 +465,7 @@ async def download_resource(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     await ensure_course_access(db, course=course, user=user)
     resource_result = await db.execute(
         select(CourseResource).where(
@@ -488,7 +505,7 @@ async def upload_resource(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     ensure_course_manager(course=course, user=user)
 
     if not file.filename:
@@ -543,7 +560,7 @@ async def delete_resource(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, course_id)
+    course = await get_course_or_404(db, course_id)
     ensure_course_manager(course=course, user=user)
     resource_result = await db.execute(
         select(CourseResource).where(CourseResource.id == resource_id, CourseResource.course_id == course_id)

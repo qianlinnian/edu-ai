@@ -164,9 +164,30 @@ def test_build_agent_runtime_config_from_workflow_maps_supported_nodes():
     runtime = build_agent_runtime_config_from_workflow(valid_workflow_dag(course_id=9), course_id=9)
 
     assert runtime["workflow_mode"] == "mapped_qa_pipeline"
+    assert runtime["llm_provider"] == "dashscope"
     assert runtime["llm_model"] == "qwen-max"
     assert runtime["tools"] == ["rag"]
     assert runtime["workflow_mapping"]["rag_node_id"] == "n2"
+
+
+def test_build_agent_runtime_config_infers_provider_from_llm_model():
+    workflow = valid_workflow_dag(course_id=9)
+    workflow["nodes"][2]["data"]["model"] = "deepseek-chat"
+
+    runtime = build_agent_runtime_config_from_workflow(workflow, course_id=9)
+
+    assert runtime["llm_provider"] == "deepseek"
+    assert runtime["llm_model"] == "deepseek-chat"
+
+
+def test_build_agent_runtime_config_uses_explicit_model_provider_mapping():
+    workflow = valid_workflow_dag(course_id=9)
+    workflow["nodes"][2]["data"]["model"] = "qwen-vl-max"
+
+    runtime = build_agent_runtime_config_from_workflow(workflow, course_id=9)
+
+    assert runtime["llm_provider"] == "dashscope"
+    assert runtime["llm_model"] == "qwen-vl-max"
 
 
 @pytest.mark.asyncio
@@ -182,7 +203,7 @@ async def test_create_workflow_preserves_validated_workflow_dag(monkeypatch):
     )
 
     monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=course))
 
     result = await agents.create_workflow(data=payload, db=db, user=make_teacher())
 
@@ -191,6 +212,95 @@ async def test_create_workflow_preserves_validated_workflow_dag(monkeypatch):
     assert db.added[0].workflow_dag == payload.workflow_dag
     assert db.added[0].is_active is False
     assert result.workflow_dag == payload.workflow_dag
+
+
+@pytest.mark.asyncio
+async def test_create_agent_rejects_duplicate_agent_for_same_course(monkeypatch):
+    course = SimpleNamespace(id=9, teacher_id=7)
+    existing_agent = make_agent(course_id=9)
+    db = FakeDB()
+    payload = agents.AgentInstanceCreate(
+        course_id=9,
+        name="Another Agent",
+        description="dup",
+        config={},
+        system_prompt="You are helpful.",
+        tools=[],
+        llm_provider="dashscope",
+        llm_model="qwen-max",
+    )
+
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, "_get_agent_by_course", AsyncMock(return_value=existing_agent))
+
+    with pytest.raises(HTTPException) as exc:
+        await agents.create_agent(data=payload, db=db, user=make_teacher())
+
+    assert exc.value.status_code == 409
+    assert "already has an Agent" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_create_agent_normalizes_provider_from_model(monkeypatch):
+    course = SimpleNamespace(id=9, teacher_id=7)
+    db = FakeDB()
+    payload = agents.AgentInstanceCreate(
+        course_id=9,
+        name="DeepSeek Agent",
+        description="provider normalization",
+        config={},
+        system_prompt="You are helpful.",
+        tools=[],
+        llm_provider="dashscope",
+        llm_model="deepseek-chat",
+    )
+
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, "_get_agent_by_course", AsyncMock(return_value=None))
+
+    result = await agents.create_agent(data=payload, db=db, user=make_teacher())
+
+    assert db.added[0].llm_model == "deepseek-chat"
+    assert db.added[0].llm_provider == "deepseek"
+    assert result.llm_provider == "deepseek"
+
+
+@pytest.mark.asyncio
+async def test_update_agent_rejects_reassigning_to_course_with_existing_agent(monkeypatch):
+    agent = make_agent(course_id=9)
+    existing_agent = make_agent(course_id=11)
+    existing_agent.id = 88
+    current_course = SimpleNamespace(id=9, teacher_id=7)
+    new_course = SimpleNamespace(id=11, teacher_id=7)
+    db = FakeDB()
+    payload = agents.AgentInstanceUpdate(course_id=11)
+
+    monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(side_effect=[current_course, new_course]))
+    monkeypatch.setattr(agents, "_get_agent_by_course", AsyncMock(return_value=existing_agent))
+
+    with pytest.raises(HTTPException) as exc:
+        await agents.update_agent(agent_id=agent.id, data=payload, db=db, user=make_teacher())
+
+    assert exc.value.status_code == 409
+    assert "would create duplicates" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_update_agent_normalizes_provider_from_model(monkeypatch):
+    agent = make_agent(course_id=9)
+    current_course = SimpleNamespace(id=9, teacher_id=7)
+    db = FakeDB()
+    payload = agents.AgentInstanceUpdate(llm_provider="dashscope", llm_model="deepseek-chat")
+
+    monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=current_course))
+
+    result = await agents.update_agent(agent_id=agent.id, data=payload, db=db, user=make_teacher())
+
+    assert agent.llm_model == "deepseek-chat"
+    assert agent.llm_provider == "deepseek"
+    assert result.llm_provider == "deepseek"
 
 
 @pytest.mark.asyncio
@@ -205,7 +315,7 @@ async def test_create_workflow_rejects_invalid_dag(monkeypatch):
     )
 
     monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=course))
 
     with pytest.raises(HTTPException) as exc:
         await agents.create_workflow(data=payload, db=db, user=make_teacher())
@@ -223,7 +333,7 @@ async def test_publish_workflow_marks_agent_active_and_applies_runtime_mapping(m
 
     monkeypatch.setattr(agents, "_get_workflow_or_404", AsyncMock(return_value=workflow))
     monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=course))
 
     result = await agents.publish_workflow(workflow_id=workflow.id, db=db, user=make_teacher())
 
@@ -231,6 +341,7 @@ async def test_publish_workflow_marks_agent_active_and_applies_runtime_mapping(m
     assert workflow.is_active is True
     assert agent.is_active is True
     assert agent.config["workflow_mode"] == "mapped_qa_pipeline"
+    assert agent.llm_provider == "dashscope"
     assert agent.config["workflow_mapping"]["llm_node_id"] == "n3"
     assert agent.llm_model == "qwen-max"
     assert agent.tools == ["rag"]
@@ -238,7 +349,7 @@ async def test_publish_workflow_marks_agent_active_and_applies_runtime_mapping(m
 
 
 @pytest.mark.asyncio
-async def test_publish_workflow_rejects_ui_only_nodes(monkeypatch):
+async def test_publish_workflow_allows_ui_only_nodes_as_capability_switches(monkeypatch):
     agent = make_agent()
     workflow = make_workflow(
         agent_id=agent.id,
@@ -249,13 +360,14 @@ async def test_publish_workflow_rejects_ui_only_nodes(monkeypatch):
 
     monkeypatch.setattr(agents, "_get_workflow_or_404", AsyncMock(return_value=workflow))
     monkeypatch.setattr(agents, "_get_agent_or_404", AsyncMock(return_value=agent))
-    monkeypatch.setattr(agents, "_get_course_or_404", AsyncMock(return_value=course))
+    monkeypatch.setattr(agents, "get_course_or_404", AsyncMock(return_value=course))
 
-    with pytest.raises(HTTPException) as exc:
-        await agents.publish_workflow(workflow_id=workflow.id, db=db, user=make_teacher())
+    result = await agents.publish_workflow(workflow_id=workflow.id, db=db, user=make_teacher())
 
-    assert exc.value.status_code == 400
-    assert "UI-only nodes" in exc.value.detail
+    assert workflow.is_active is True
+    assert agent.is_active is True
+    assert agent.config["workflow_mode"] == "mapped_qa_pipeline"
+    assert result.is_active is True
 
 
 def test_platform_connection_requires_platform_specific_config():
@@ -281,9 +393,11 @@ def test_platform_connection_requires_platform_specific_config():
 async def test_platform_mock_endpoints_return_stable_payloads():
     chaoxing_result = await platform.chaoxing_lti_launch(
         platform.ChaoxingLaunchRequest(course_id=1, launch_ticket="launch-ticket-001", role="student"),
+        request=SimpleNamespace(headers={"origin": "https://demo.eduai.example"}),
         user=make_teacher(),
     )
     dingtalk_result = await platform.dingtalk_auth(
+        request=SimpleNamespace(headers={"referer": "https://portal.example.com/platform"}),
         code="auth-code-001",
         course_id=2,
         role="teacher",
@@ -304,7 +418,7 @@ async def test_platform_mock_endpoints_return_stable_payloads():
     assert chaoxing_payload["role_source"] == "provided_by_upstream_platform_payload"
     assert chaoxing_payload["upstream_reference"] == "launch-ticket-001"
     assert chaoxing_payload["upstream_reference_type"] == "launch_ticket"
-    assert chaoxing_payload["widget_url"].startswith("/widget/chat?course=1&token=")
+    assert chaoxing_payload["widget_url"].startswith("https://demo.eduai.example/widget/chat?course=1&token=")
     assert "simulated platform integration" in chaoxing_payload["integration_boundary"].lower()
 
     assert dingtalk_payload["platform"] == "dingtalk"
@@ -319,4 +433,4 @@ async def test_platform_mock_endpoints_return_stable_payloads():
     assert dingtalk_payload["role_source"] == "provided_by_upstream_platform_payload"
     assert dingtalk_payload["upstream_reference"] == "auth-code-001"
     assert dingtalk_payload["upstream_reference_type"] == "auth_code"
-    assert dingtalk_payload["widget_url"].startswith("/widget/chat?course=2&token=")
+    assert dingtalk_payload["widget_url"].startswith("https://portal.example.com/widget/chat?course=2&token=")

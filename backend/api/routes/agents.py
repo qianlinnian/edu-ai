@@ -3,7 +3,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.course_helpers import get_course_or_404
 from core.database import get_db
+from core.permissions import ensure_course_access, ensure_course_manager
 from core.security import get_current_user
 from models.agent import (
     AgentInstance,
@@ -112,14 +114,6 @@ def _apply_workflow_publication(agent: AgentInstance, workflow: AgentWorkflow) -
     agent.is_active = True
 
 
-async def _get_course_or_404(db: AsyncSession, course_id: int) -> Course:
-    result = await db.execute(select(Course).where(Course.id == course_id))
-    course = result.scalar_one_or_none()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-    return course
-
-
 async def _get_template_or_404(db: AsyncSession, template_id: int) -> AgentTemplate:
     result = await db.execute(select(AgentTemplate).where(AgentTemplate.id == template_id))
     template = result.scalar_one_or_none()
@@ -154,28 +148,6 @@ async def _get_workflow_or_404(db: AsyncSession, workflow_id: int) -> AgentWorkf
     return workflow
 
 
-async def _ensure_course_access(db: AsyncSession, *, course: Course, user: User) -> None:
-    if user.role == UserRole.ADMIN:
-        return
-    if user.role == UserRole.TEACHER and course.teacher_id == user.id:
-        return
-    if user.role == UserRole.STUDENT:
-        result = await db.execute(
-            select(Enrollment.id).where(Enrollment.course_id == course.id, Enrollment.student_id == user.id)
-        )
-        if result.scalar_one_or_none() is not None:
-            return
-    raise HTTPException(status_code=403, detail="Not allowed to access this course")
-
-
-def _ensure_course_manager(*, course: Course, user: User) -> None:
-    if user.role == UserRole.ADMIN:
-        return
-    if user.role == UserRole.TEACHER and course.teacher_id == user.id:
-        return
-    raise HTTPException(status_code=403, detail="Teacher or admin access required")
-
-
 def _normalize_agent_llm_payload(payload: dict) -> dict:
     next_payload = dict(payload)
     model = next_payload.get("llm_model")
@@ -198,8 +170,8 @@ async def create_agent(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    course = await _get_course_or_404(db, data.course_id)
-    _ensure_course_manager(course=course, user=user)
+    course = await get_course_or_404(db, data.course_id)
+    ensure_course_manager(course=course, user=user)
 
     if data.template_id is not None:
         await _get_template_or_404(db, data.template_id)
@@ -228,8 +200,8 @@ async def list_agents(
 ):
     query = select(AgentInstance)
     if course_id is not None:
-        course = await _get_course_or_404(db, course_id)
-        await _ensure_course_access(db, course=course, user=user)
+        course = await get_course_or_404(db, course_id)
+        await ensure_course_access(db, course=course, user=user)
         query = query.where(AgentInstance.course_id == course_id)
     elif user.role == UserRole.TEACHER:
         query = query.join(Course, AgentInstance.course_id == Course.id).where(Course.teacher_id == user.id)
@@ -249,8 +221,8 @@ async def get_agent(
     user: User = Depends(get_current_user),
 ):
     agent = await _get_agent_or_404(db, agent_id)
-    course = await _get_course_or_404(db, agent.course_id)
-    await _ensure_course_access(db, course=course, user=user)
+    course = await get_course_or_404(db, agent.course_id)
+    await ensure_course_access(db, course=course, user=user)
     return agent
 
 
@@ -262,15 +234,15 @@ async def update_agent(
     user: User = Depends(get_current_user),
 ):
     agent = await _get_agent_or_404(db, agent_id)
-    current_course = await _get_course_or_404(db, agent.course_id)
-    _ensure_course_manager(course=current_course, user=user)
+    current_course = await get_course_or_404(db, agent.course_id)
+    ensure_course_manager(course=current_course, user=user)
 
     payload = data.model_dump(exclude_unset=True)
     payload = _normalize_agent_llm_payload(payload)
     new_course_id = payload.get("course_id")
     if new_course_id is not None and new_course_id != agent.course_id:
-        new_course = await _get_course_or_404(db, new_course_id)
-        _ensure_course_manager(course=new_course, user=user)
+        new_course = await get_course_or_404(db, new_course_id)
+        ensure_course_manager(course=new_course, user=user)
         existing_agent = await _get_agent_by_course(db, course_id=new_course_id)
         if existing_agent is not None and existing_agent.id != agent.id:
             raise HTTPException(
@@ -298,8 +270,8 @@ async def publish_agent(
     user: User = Depends(get_current_user),
 ):
     agent = await _get_agent_or_404(db, agent_id)
-    course = await _get_course_or_404(db, agent.course_id)
-    _ensure_course_manager(course=course, user=user)
+    course = await get_course_or_404(db, agent.course_id)
+    ensure_course_manager(course=course, user=user)
 
     workflow_result = await db.execute(
         select(AgentWorkflow)
@@ -327,8 +299,8 @@ async def create_workflow(
     user: User = Depends(get_current_user),
 ):
     agent = await _get_agent_or_404(db, data.agent_id)
-    course = await _get_course_or_404(db, agent.course_id)
-    _ensure_course_manager(course=course, user=user)
+    course = await get_course_or_404(db, agent.course_id)
+    ensure_course_manager(course=course, user=user)
     _validate_workflow_or_400(data.workflow_dag, course_id=agent.course_id, for_publish=False)
 
     existing_workflow = await db.execute(select(AgentWorkflow.id).where(AgentWorkflow.agent_id == agent.id).limit(1))
@@ -347,8 +319,8 @@ async def list_workflows(
     user: User = Depends(get_current_user),
 ):
     agent = await _get_agent_or_404(db, agent_id)
-    course = await _get_course_or_404(db, agent.course_id)
-    await _ensure_course_access(db, course=course, user=user)
+    course = await get_course_or_404(db, agent.course_id)
+    await ensure_course_access(db, course=course, user=user)
 
     result = await db.execute(
         select(AgentWorkflow).where(AgentWorkflow.agent_id == agent_id).order_by(AgentWorkflow.created_at.desc())
@@ -364,8 +336,8 @@ async def get_workflow(
 ):
     workflow = await _get_workflow_or_404(db, workflow_id)
     agent = await _get_agent_or_404(db, workflow.agent_id)
-    course = await _get_course_or_404(db, agent.course_id)
-    await _ensure_course_access(db, course=course, user=user)
+    course = await get_course_or_404(db, agent.course_id)
+    await ensure_course_access(db, course=course, user=user)
     return workflow
 
 
@@ -378,8 +350,8 @@ async def update_workflow(
 ):
     workflow = await _get_workflow_or_404(db, workflow_id)
     agent = await _get_agent_or_404(db, workflow.agent_id)
-    course = await _get_course_or_404(db, agent.course_id)
-    _ensure_course_manager(course=course, user=user)
+    course = await get_course_or_404(db, agent.course_id)
+    ensure_course_manager(course=course, user=user)
 
     payload = data.model_dump(exclude_unset=True)
     if "workflow_dag" in payload:
@@ -402,8 +374,8 @@ async def publish_workflow(
 ):
     workflow = await _get_workflow_or_404(db, workflow_id)
     agent = await _get_agent_or_404(db, workflow.agent_id)
-    course = await _get_course_or_404(db, agent.course_id)
-    _ensure_course_manager(course=course, user=user)
+    course = await get_course_or_404(db, agent.course_id)
+    ensure_course_manager(course=course, user=user)
     _validate_workflow_or_400(workflow.workflow_dag, course_id=agent.course_id, for_publish=True)
 
     await db.execute(

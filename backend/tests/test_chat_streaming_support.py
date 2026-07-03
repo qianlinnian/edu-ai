@@ -40,7 +40,7 @@ class FakeDashScopeResponse:
 
 
 def test_qa_agent_chat_stream_uses_rag_context(monkeypatch):
-    async def fake_get_context(*, db, course_id, query):
+    async def fake_get_context(*, db, course_id, query, top_k):
         return "Material: recursion requires a base case."
 
     monkeypatch.setattr("agent_core.agent_base.get_context", fake_get_context)

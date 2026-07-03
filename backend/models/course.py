@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, Integer, Float, DateTime, ForeignKey, JSON
+from sqlalchemy import String, Text, Integer, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from pgvector.sqlalchemy import Vector
 from core.database import Base

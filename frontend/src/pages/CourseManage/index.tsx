@@ -537,11 +537,6 @@ export default function CourseManage() {
           <Col key={course.id} xs={24} sm={12} lg={8}>
             <Card
               hoverable
-              onClick={() => {
-                if (mode !== 'student-available' || isEnrolled) {
-                  setSelectedCourse(course)
-                }
-              }}
               style={{
                 borderRadius: 16,
                 border: '1px solid #e5edf7',
@@ -550,7 +545,15 @@ export default function CourseManage() {
               }}
               styles={{ body: { padding: 20 } }}
               actions={isTeacher ? [
-                <span key="enter" onClick={() => setSelectedCourse(course)}>进入课程</span>,
+                <span
+                  key="enter"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setSelectedCourse(course)
+                  }}
+                >
+                  进入课程
+                </span>,
                 <Popconfirm
                   key="delete"
                   title="确认删除课程？"
@@ -559,16 +562,33 @@ export default function CourseManage() {
                   okButtonProps={{ danger: true }}
                   onConfirm={() => void deleteCourse(course)}
                 >
-                  <Typography.Text type="danger" onClick={(event) => event.stopPropagation()}>删除</Typography.Text>
+                  <span onClick={(event) => event.stopPropagation()}>
+                    <Typography.Text type="danger">删除</Typography.Text>
+                  </span>
                 </Popconfirm>,
               ] : mode === 'student-enrolled' ? [
-                <span key="enter" onClick={() => setSelectedCourse(course)}>进入课程</span>,
+                <span
+                  key="enter"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setSelectedCourse(course)
+                  }}
+                >
+                  进入课程
+                </span>,
                 <span key="unenroll-action" onClick={(event) => event.stopPropagation()}>{studentAction}</span>,
               ] : [
                 <span key="enroll-action" onClick={(event) => event.stopPropagation()}>{studentAction}</span>,
               ]}
             >
-              <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+              <div
+                style={{ display: 'flex', gap: 14, alignItems: 'flex-start', cursor: mode !== 'student-available' || isEnrolled ? 'pointer' : 'default' }}
+                onClick={() => {
+                  if (mode !== 'student-available' || isEnrolled) {
+                    setSelectedCourse(course)
+                  }
+                }}
+              >
                 <Avatar size={48} style={{ background: color, fontWeight: 700, flexShrink: 0 }}>
                   {course.name[0]}
                 </Avatar>

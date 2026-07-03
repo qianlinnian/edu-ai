@@ -128,8 +128,19 @@ function buildDefaultNodes(llmModel: string = 'qwen-max', selectedCourse?: numbe
   }))
 }
 
+function ensureNodePosition(node: Node, index: number): Node {
+  const position = node.position && Number.isFinite(node.position.x) && Number.isFinite(node.position.y)
+    ? node.position
+    : { x: 280, y: 60 + index * 120 }
+  return {
+    ...node,
+    position,
+  }
+}
+
 function hydrateWorkflowNodes(nodes: Node[], agent: AgentItem, selectedCourse?: number) {
-  return nodes.map((node) => {
+  return nodes.map((rawNode, index) => {
+    const node = ensureNodePosition(rawNode, index)
     const nodeType = String(node.data?.nodeType || '')
     if (nodeType === 'llm_node' && !String(node.data?.model || '').trim()) {
       return { ...node, data: { ...node.data, model: agent.llm_model || 'qwen-max' } }
@@ -208,7 +219,6 @@ const LOCAL_TEMPLATE_ITEMS: TemplateItem[] = [
   {
     id: 0,
     name: '通用教学模板',
-    description: '包含课程答疑、作业批改、学情分析、练习生成等常见节点；非 QA 节点当前作为前端能力开关。',
   },
 ]
 
@@ -760,13 +770,7 @@ export default function AgentBuilder() {
         </div>
 
         <div style={{ padding: '10px 16px', background: '#fcfcfc', borderBottom: '1px solid #f3f3f3' }}>
-          <Alert
-            type={validation.saveErrors.length === 0 && validation.publishErrors.length === 0 ? 'success' : 'warning'}
-            showIcon
-            message="当前是课程 Agent 可视化配置器：QA 主链路会映射到运行时，其余能力节点会作为前端功能开关随 Agent 发布"
-            description="保存会校验 DAG 结构。发布后，input/rag/llm/output 会映射到 QA Agent 运行配置；作业批改、学情分析、练习生成等节点当前用于控制前端是否提供对应能力入口，不宣称通用 DAG 逐节点执行。"
-          />
-          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Tag color="blue">当前 Agent：{agentName || '未命名 Agent'}</Tag>
             {enabledNodeTypes.length === 0 ? (
               <Tag>暂无节点</Tag>
@@ -777,11 +781,10 @@ export default function AgentBuilder() {
                 </Tag>
               ))
             )}
-            {selectedTemplateItem?.description ? <Tag>{selectedTemplateItem.description}</Tag> : null}
           </div>
         </div>
 
-        <div style={{ flex: 1, cursor: 'default' }}>
+        <div style={{ flex: 1, cursor: 'default', minHeight: 520 }}>
           <ReactFlow
             nodes={nodes}
             edges={edges}

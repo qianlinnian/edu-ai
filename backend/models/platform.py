@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, Integer, DateTime, JSON, Boolean
+from sqlalchemy import String, Integer, DateTime, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from core.database import Base
 

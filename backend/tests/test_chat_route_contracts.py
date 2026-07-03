@@ -31,6 +31,8 @@ class FakeDB:
         self.deleted = []
         self.flushed = False
         self.refreshed = []
+        self.commit_calls = 0
+        self.rollback_calls = 0
 
     def add(self, obj):
         self.added.append(obj)
@@ -51,6 +53,12 @@ class FakeDB:
 
     async def delete(self, obj):
         self.deleted.append(obj)
+
+    async def commit(self):
+        self.commit_calls += 1
+
+    async def rollback(self):
+        self.rollback_calls += 1
 
 
 def make_user(user_id: int = 42):
@@ -94,6 +102,18 @@ def parse_sse_events(payload: bytes) -> list[dict]:
     return events
 
 
+@pytest.fixture(autouse=True)
+def patch_course_access(monkeypatch):
+    async def fake_resolve_course(*, data, db):
+        return SimpleNamespace(id=data.course_id, teacher_id=1)
+
+    async def fake_ensure_course_access(db, *, course, user):
+        return None
+
+    monkeypatch.setattr(chat, "_resolve_course", fake_resolve_course)
+    monkeypatch.setattr(chat, "ensure_course_access", fake_ensure_course_access)
+
+
 def test_chat_router_has_single_send_stream_route():
     send_stream_routes = [
         route
@@ -101,6 +121,23 @@ def test_chat_router_has_single_send_stream_route():
         if getattr(route, "path", "") == "/send-stream" and "POST" in getattr(route, "methods", set())
     ]
     assert len(send_stream_routes) == 1
+
+
+def test_agent_config_uses_published_runtime_mapping():
+    agent = make_agent()
+    agent.tools = ["rag"]
+    agent.config = {
+        "workflow_mode": "mapped_qa_pipeline",
+        "top_k": 8,
+        "similarity_threshold": 0.75,
+    }
+
+    config = chat._agent_config(agent, course_id=agent.course_id)
+
+    assert config.llm_model == "qwen-max"
+    assert config.tools == ["rag"]
+    assert config.top_k == 8
+    assert config.similarity_threshold == 0.75
 
 
 @pytest.mark.asyncio
@@ -151,6 +188,33 @@ async def test_send_message_stream_success(monkeypatch):
     assert events[2]["session_id"] == 1
     assert events[2]["message_id"] == 3
     assert db.added[-1].content == "part-1part-2"
+    assert db.commit_calls == 2
+    assert db.rollback_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_send_message_stream_rolls_back_when_stream_fails(monkeypatch):
+    agent = make_agent()
+    db = FakeDB(results=[FakeResult(scalar=agent), FakeResult(scalars=[])])
+    data = chat.ChatRequest(agent_id=agent.id, course_id=agent.course_id, message="hello")
+
+    async def fake_chat_stream(self, query, history=None, context=None):
+        yield "part-1"
+        raise RuntimeError("stream failed")
+
+    monkeypatch.setattr(chat.QAAgent, "chat_stream", fake_chat_stream)
+
+    response = await chat.send_message_stream(data=data, db=db, user=make_user())
+    payload = b""
+    async for chunk in response.body_iterator:
+        payload += chunk.encode("utf-8") if isinstance(chunk, str) else chunk
+
+    events = parse_sse_events(payload)
+
+    assert events[0] == {"type": "chunk", "content": "part-1"}
+    assert events[1] == {"type": "error", "detail": "stream failed"}
+    assert db.commit_calls == 1
+    assert db.rollback_calls == 1
 
 
 @pytest.mark.asyncio
@@ -218,3 +282,21 @@ async def test_send_message_rejects_inactive_agent():
 
     assert exc.value.status_code == 409
     assert exc.value.detail == "Agent is not active"
+
+
+@pytest.mark.asyncio
+async def test_send_message_rejects_forbidden_course_access(monkeypatch):
+    agent = make_agent()
+    db = FakeDB()
+    data = chat.ChatRequest(agent_id=agent.id, course_id=agent.course_id, message="hello")
+
+    async def fake_ensure_course_access(db, *, course, user):
+        raise HTTPException(status_code=403, detail="Not allowed to access this course")
+
+    monkeypatch.setattr(chat, "ensure_course_access", fake_ensure_course_access)
+
+    with pytest.raises(HTTPException) as exc:
+        await chat.send_message(data=data, db=db, user=make_user())
+
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "Not allowed to access this course"

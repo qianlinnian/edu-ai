@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Card, Col, Empty, List, Progress, Row, Select, Skeleton, Statistic, Tag } from 'antd'
+import { Alert, Card, Col, Empty, List, Row, Select, Skeleton, Statistic, Tag } from 'antd'
 import {
   BookOutlined, TeamOutlined, FileTextOutlined, AlertOutlined,
   CheckCircleOutlined, ClockCircleOutlined, FireOutlined,
@@ -68,7 +68,6 @@ export default function Dashboard() {
   const [classReport, setClassReport] = useState<ClassReport | null>(null)
   const [classAlerts, setClassAlerts] = useState<{ id?: number; severity?: 'high' | 'medium' | 'low'; message?: string; student_id?: number; details?: { knowledge_unit_name?: string } }[]>([])
   const [classStudentCount, setClassStudentCount] = useState(0)
-  const [classPendingSubmissions, setClassPendingSubmissions] = useState(0)
   const [teacherLoading, setTeacherLoading] = useState(false)
 
   // 学生端数据
@@ -98,27 +97,6 @@ export default function Dashboard() {
     }],
   })
 
-  const buildSubmitTrendOption = (items: { date: string; count: number }[]) => ({
-    tooltip: { trigger: 'axis' },
-    grid: { top: 20, right: 20, bottom: 30, left: 40 },
-    xAxis: { type: 'category', data: items.map(i => i.date) },
-    yAxis: { type: 'value' },
-    series: [{
-      name: '提交数', type: 'line', smooth: true,
-      data: items.map(i => i.count),
-      itemStyle: { color: '#00a8ff' },
-      areaStyle: {
-        color: {
-          type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [
-            { offset: 0, color: 'rgba(0,168,255,0.3)' },
-            { offset: 1, color: 'rgba(0,168,255,0.02)' },
-          ],
-        },
-      },
-    }],
-  })
-
   const loadTeacherDashboard = async (courseId?: number) => {
     const activeCourseId = courseId || teacherSelectedCourseId
     if (!activeCourseId) return
@@ -132,9 +110,6 @@ export default function Dashboard() {
       setClassReport(reportRes.data)
       setClassAlerts(alertsRes.data || [])
       setClassStudentCount(Array.isArray(studentsRes.data) ? studentsRes.data.length : 0)
-      // 待批改数从 classReport 估算（通过风险学生数近似）
-      const riskCount = reportRes.data?.by_knowledge_unit?.reduce((s: number, i: any) => s + (i.risk_count || 0), 0) ?? 0
-      setClassPendingSubmissions(riskCount)
     } catch {
       // non-fatal
     } finally {
@@ -209,7 +184,6 @@ export default function Dashboard() {
 
   if (isTeacher) {
     const average = toPercent(classReport?.overall_avg_mastery)
-    const riskTotal = classReport?.by_knowledge_unit?.reduce((s, i) => s + (i.risk_count || 0), 0) ?? 0
     const barOption = classReport?.by_knowledge_unit?.length
       ? buildClassBarOption(classReport.by_knowledge_unit)
       : { tooltip: {}, xAxis: {}, yAxis: {}, series: [] }
