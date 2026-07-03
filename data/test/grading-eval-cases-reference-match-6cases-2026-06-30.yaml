@@ -1,0 +1,48 @@
+assignment:
+  title: "Draft grading evaluation: explicit reference-answer match"
+  description: >
+    Answer according to the teacher-provided standard answer. This set is used to verify
+    deterministic full-score behavior when the submission matches the reference answer.
+  assignment_type: "text"
+  max_score: 100
+  rubric:
+    dimensions:
+      - name: correctness
+        max_score: 60
+        criteria: "Answer content matches the required result."
+      - name: completeness
+        max_score: 25
+        criteria: "Required answer is fully present."
+      - name: clarity
+        max_score: 15
+        criteria: "Answer is clearly stated."
+  reference_answer: "标准答案是：栈是后进先出，队列是先进先出。"
+  knowledge_points: []
+cases:
+  - id: grading_eval_refmatch_01
+    label: full
+    expected_min: 100
+    expected_max: 100
+    content: |
+      栈是后进先出，队列是先进先出。
+
+  - id: grading_eval_refmatch_03
+    label: full
+    expected_min: 100
+    expected_max: 100
+    content: |
+      栈是后进先出，队列是先进先出！！！
+
+  - id: grading_eval_refmatch_04
+    label: partial
+    expected_min: 50
+    expected_max: 80
+    content: |
+      栈是后进先出。
+
+  - id: grading_eval_refmatch_05
+    label: low
+    expected_min: 0
+    expected_max: 40
+    content: |
+      队列是后进先出，栈是先进先出。

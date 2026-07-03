@@ -1,0 +1,135 @@
+assignment:
+  title: "Draft grading evaluation: stack vs queue basics"
+  description: >
+    Explain the difference between a stack and a queue. The answer should cover the access order,
+    core operations, and at least one suitable use case or example for each structure.
+  assignment_type: "text"
+  max_score: 100
+  rubric:
+    dimensions:
+      - name: correctness
+        max_score: 60
+        criteria: "Correctly explain LIFO vs FIFO and the basic operations of both structures."
+      - name: completeness
+        max_score: 25
+        criteria: "Cover access order, operations, and at least one example or use case for each."
+      - name: clarity
+        max_score: 15
+        criteria: "Explain the contrast clearly with coherent wording and structure."
+  reference_answer: >
+    A stack follows LIFO and typically supports push, pop, and top/peek. It is suitable for
+    function-call stacks, undo operations, and expression evaluation. A queue follows FIFO and
+    typically supports enqueue, dequeue, and front/peek. It is suitable for task scheduling,
+    BFS traversal, buffering, and waiting-line style processing.
+  knowledge_points: []
+cases:
+  - id: grading_eval_sq_bad_01
+    label: bad
+    expected_min: 0
+    expected_max: 40
+    content: |
+      Stack 和 queue 差不多，都是把数据放进去再拿出来。
+      我觉得它们的顺序没有本质区别，反正最后都能取到。
+
+  - id: grading_eval_sq_bad_02
+    label: bad
+    expected_min: 0
+    expected_max: 45
+    content: |
+      A stack is first-in first-out and a queue is last-in first-out.
+      They are mostly interchangeable, and I do not think their operations matter much.
+
+  - id: grading_eval_sq_bad_03
+    label: bad
+    expected_min: 0
+    expected_max: 42
+    content: |
+      Queue 就是用来递归的，stack 就是排队。
+      它们都只需要一个删除操作，不需要区分从哪一端删。
+
+  - id: grading_eval_sq_bad_04
+    label: bad
+    expected_min: 0
+    expected_max: 45
+    content: |
+      Both stack and queue store data in order.
+      The difference is only their names, not their behavior or use cases.
+
+  - id: grading_eval_sq_mid_01
+    label: mid
+    expected_min: 58
+    expected_max: 80
+    content: |
+      栈和队列的主要区别是出入顺序不同。栈一般是后进先出，队列一般是先进先出。
+      栈常见操作有 push 和 pop，队列常见操作有 enqueue 和 dequeue。
+      不过我这里没有展开说明它们各自更适合什么场景。
+
+  - id: grading_eval_sq_mid_02
+    label: mid
+    expected_min: 60
+    expected_max: 82
+    content: |
+      A stack is LIFO, so the last pushed element is popped first.
+      A queue is FIFO, so the earliest enqueued element leaves first.
+      For example, a queue can model waiting lines, but this answer does not clearly give a stack example.
+
+  - id: grading_eval_sq_mid_03
+    label: mid
+    expected_min: 60
+    expected_max: 82
+    content: |
+      栈像一叠盘子，最后放上去的盘子先拿走；队列像排队，先来的先离开。
+      栈有 push、pop，队列有 enqueue、dequeue。
+      这些说明了核心差别，不过我没有把两者的典型应用总结得很完整。
+
+  - id: grading_eval_sq_mid_04
+    label: mid
+    expected_min: 58
+    expected_max: 80
+    content: |
+      Stack and queue are both linear data structures, but their removal order is different.
+      Stack uses LIFO and queue uses FIFO.
+      Stack can be used in function calls, and queue can be used in task scheduling.
+      This answer is correct, but still brief and not very systematic.
+
+  - id: grading_eval_sq_good_01
+    label: good
+    expected_min: 84
+    expected_max: 100
+    content: |
+      栈和队列都是线性结构，但访问顺序不同。栈是后进先出（LIFO），因此最后压入的数据最先弹出；
+      队列是先进先出（FIFO），因此最早进入的数据最先出队。
+      栈的典型操作是 push、pop、peek/top，适合函数调用栈和撤销操作；
+      队列的典型操作是 enqueue、dequeue、front，适合排队处理、任务调度和层序/BFS 这类场景。
+
+  - id: grading_eval_sq_good_02
+    label: good
+    expected_min: 85
+    expected_max: 100
+    content: |
+      A stack removes the most recently added element first, so it follows LIFO.
+      Its common operations are push, pop, and peek/top. This makes it suitable for undo systems,
+      function-call stacks, and expression evaluation.
+      A queue removes the earliest added element first, so it follows FIFO.
+      Its common operations are enqueue, dequeue, and front/peek, and it is suitable for waiting lines,
+      buffering, and breadth-first search.
+
+  - id: grading_eval_sq_good_03
+    label: good
+    expected_min: 84
+    expected_max: 100
+    content: |
+      The essential difference is the access discipline.
+      A stack is LIFO: insertion and deletion happen at the same end, which supports push/pop behavior.
+      A queue is FIFO: new elements enter at the rear and old elements leave from the front through enqueue/dequeue.
+      Because of that, stacks fit nested or backtracking-style work, while queues fit scheduling and level-order processing.
+
+  - id: grading_eval_sq_good_04
+    label: good
+    expected_min: 86
+    expected_max: 100
+    content: |
+      栈与队列的核心区别不在“能不能存数据”，而在“先取谁”。
+      栈遵循后进先出，所以适合处理具有回退关系的过程，例如函数调用、括号匹配、撤销操作；
+      队列遵循先进先出，所以适合处理等待中的任务、打印任务、消息缓冲和 BFS。
+      从操作上看，栈主要是 push / pop / top，队列主要是 enqueue / dequeue / front。

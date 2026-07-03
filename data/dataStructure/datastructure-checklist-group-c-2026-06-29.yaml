@@ -1,0 +1,54 @@
+- question: "堆排序的时间复杂度为？"
+  options:
+    A: "O(n²)"
+    B: "O(n log n)"
+    C: "O(n)"
+    D: "O(log n)"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "七、排序，第21题"
+
+- question: "快速排序性能最差的情况是？"
+  options:
+    A: "随机数组"
+    B: "已排序数组（未优化）"
+    C: "逆序数组"
+    D: "重复元素"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "七、排序，第22题"
+
+- question: "哈希函数设计原则不包括："
+  options:
+    A: "均匀性"
+    B: "简单性"
+    C: "单调性"
+    D: "低冲突"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "八、索引与散列，第23题"
+
+- question: "负载因子定义为："
+  options:
+    A: "表长/元素数"
+    B: "元素数/表长"
+    C: "冲突数/表长"
+    D: "查找次数"
+  expected_points:
+    - "正确答案：B"
+  answerable_from_material: true
+  source_material: "八、索引与散列，第24题"
+
+- question: "B树主要用于："
+  options:
+    A: "内存排序"
+    B: "图遍历"
+    C: "外存索引"
+    D: "栈实现"
+  expected_points:
+    - "正确答案：C"
+  answerable_from_material: true
+  source_material: "八、索引与散列，第25题"

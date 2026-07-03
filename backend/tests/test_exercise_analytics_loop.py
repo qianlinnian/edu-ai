@@ -346,3 +346,75 @@ async def test_generate_targeted_exercises_prefers_course_agent_llm_config(monke
     assert "course exercise prompt" in captured["messages"][0]["content"]
     assert result["source"] == "generated"
     assert result["generation_method"] == "llm"
+
+
+@pytest.mark.asyncio
+async def test_learning_loop_smoke_from_attempt_to_alert_to_next_exercise(monkeypatch):
+    attempt_exercise = make_pool_exercise(kp_ids=[301])
+    attempt_exercise.id = 51
+    attempt_exercise.answer = "B"
+    attempt_exercise.explanation = "B is correct."
+
+    attempt_db = FakeDB(
+        results=[
+            FakeResult(scalar=attempt_exercise),
+            FakeResult(scalars=[301]),
+            FakeResult(scalar=None),
+        ]
+    )
+
+    attempt = await exercise_engine.create_attempt_and_update_mastery(
+        attempt_db,
+        student_id=21,
+        exercise_id=51,
+        generated_exercise_id=None,
+        student_answer="A",
+    )
+    mastery = next(item for item in attempt_db.added if isinstance(item, StudentKnowledgeMastery))
+
+    alert_db = FakeDB(
+        results=[
+            FakeResult(rows=[(mastery, make_knowledge_unit(knowledge_unit_id=301, name="Functions"))]),
+            FakeResult(scalars=[]),
+            FakeResult(scalar=None),
+        ]
+    )
+    created_alerts = await analytics_engine.refresh_learning_alerts(alert_db, course_id=3, student_id=21)
+
+    next_exercise = make_pool_exercise(kp_ids=[301])
+    next_exercise.id = 52
+    next_exercise.answer = "B"
+    next_exercise.explanation = "B is correct."
+    next_exercise_db = FakeDB(results=[FakeResult(scalars=[next_exercise])])
+
+    async def fake_knowledge_context(*args, **kwargs):
+        return [
+            {
+                "id": 301,
+                "name": "Functions",
+                "description": "desc",
+                "difficulty": 2,
+                "mastery_score": mastery.mastery_score,
+                "attempt_count": mastery.attempt_count,
+                "correct_count": mastery.correct_count,
+            }
+        ]
+
+    monkeypatch.setattr(exercise_engine, "_get_knowledge_context", fake_knowledge_context)
+
+    generated = await exercise_engine.generate_targeted_exercises(
+        next_exercise_db,
+        student_id=21,
+        course_id=3,
+        knowledge_point_ids=[],
+        exercise_type=ExerciseType.CHOICE,
+        difficulty=2,
+        count=1,
+        use_llm=False,
+    )
+
+    assert attempt.is_correct is False
+    assert mastery.mastery_score == 0.35
+    assert created_alerts == 1
+    assert generated["target_knowledge_points"][0]["knowledge_unit_id"] == 301
+    assert generated["exercises"][0]["source"] == "pool"
