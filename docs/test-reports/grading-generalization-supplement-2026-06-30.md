@@ -68,11 +68,11 @@ So the current behavior is:
 ## Code Changes Relevant to This Evidence
 
 - grading prompt and review-aware payload:
-  - [backend/agent_core/agent_base.py](/D:/course/SEME/edu-ai/backend/agent_core/agent_base.py:1)
+  - `backend/agent_core/agent_base.py`
 - grading worker grounding and generic review path:
-  - [backend/workers/grading_task.py](/D:/course/SEME/edu-ai/backend/workers/grading_task.py:1)
+  - `backend/workers/grading_task.py`
 - reusable evaluation script with YAML assignment config:
-  - [backend/script/evaluate_grading_draft.py](/D:/course/SEME/edu-ai/backend/script/evaluate_grading_draft.py:1)
+  - `backend/script/evaluate_grading_draft.py`
 
 ## Current Automated Regression Baseline
 
@@ -85,16 +85,16 @@ pytest backend/tests -q
 
 Observed result:
 
-- `96 passed`
+- `100 passed`
 
 ## Current Grading Evaluation Results
 
 ### 1. Recursion explanation set
 
 - Case file:
-  - [grading-eval-cases-recursion-25cases-2026-06-29.yaml](/D:/course/SEME/edu-ai/data/test/grading-eval-cases-recursion-25cases-2026-06-29.yaml:1)
+  - `data/test/grading-eval-cases-recursion-25cases-2026-06-29.yaml`
 - Result file:
-  - [grading-eval-local-rerun-25cases-2026-06-29.json](/D:/course/SEME/edu-ai/docs/test-reports/grading-eval-local-rerun-25cases-2026-06-29.json:1)
+  - `docs/test-reports/grading-eval-local-rerun-25cases-2026-06-29.json`
 
 Observed result:
 
@@ -108,9 +108,9 @@ Interpretation:
 ### 2. Non-recursive stack-vs-queue concept-comparison set
 
 - Case file:
-  - [grading-eval-cases-stack-queue-12cases-2026-06-30.yaml](/D:/course/SEME/edu-ai/data/test/grading-eval-cases-stack-queue-12cases-2026-06-30.yaml:1)
+  - `data/test/grading-eval-cases-stack-queue-12cases-2026-06-30.yaml`
 - Result file:
-  - [grading-eval-stack-queue-12cases-2026-06-30.json](/D:/course/SEME/edu-ai/docs/test-reports/grading-eval-stack-queue-12cases-2026-06-30.json:1)
+  - `docs/test-reports/grading-eval-stack-queue-12cases-2026-06-30.json`
 
 Observed result:
 
@@ -127,7 +127,7 @@ For the current tested scope, EduAI grading now has:
 
 - one recursion text-explanation set above `90%`
 - one non-recursive concept-comparison text set above `90%`
-- a green backend regression baseline of `96 passed`
+- a green backend regression baseline of `100 passed`
 
 ## Unsafe Current Statement
 
