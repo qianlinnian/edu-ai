@@ -1,235 +1,264 @@
-# 可嵌入式跨课程AI Agent通用架构平台 
-## Statue
+﻿# EduAI 可嵌入式跨课程 AI Agent 通用架构平台
 
-> [!IMPORTANT]
-> DEVELOPING!   
-> 仓库主要在个人分支中开发完成后，并入 `dev` 分支，测试检查，最后再并入 `main` 分支。
+EduAI 是一个面向课程场景的 AI Agent 平台，支持课程知识库问答、作业提交与智能批改、练习生成、学情分析、课程 Agent 配置发布，以及超星/钉钉等平台的模拟接入。
 
-## 环境准备
+如果需要了解仓库整体能力、模块结构和测试材料，请先阅读：[Intro_pro_readme.md](Intro_pro_readme.md)。
 
-### 1. 安装必备软件
+## 当前推荐启动方式
 
-| 软件 | 版本要求 | 下载地址 |
-|------|----------|----------|
-| Docker Desktop | 最新版 | https://www.docker.com/products/docker-desktop |
-| Python | 3.11+ | https://www.python.org/downloads/ |
-| Node.js | 18+ | https://nodejs.org/ |
-| Git | 最新版 | https://git-scm.com/ |
+日常开发建议采用“Docker 启动基础设施 + 本地 Conda 启动后端/Worker + 本地启动前端”的方式。
 
-### 2. 克隆项目
+推荐环境名：
 
-```bash
-git clone <仓库地址>
+```powershell
+conda activate edu
+```
+
+## 1. 环境要求
+
+| 组件 | 推荐版本 | 说明 |
+| --- | --- | --- |
+| Docker Desktop | 最新稳定版 | 启动 PostgreSQL、Redis、MinIO |
+| Python | 3.11 | 后端 FastAPI / Celery |
+| Conda | 任意新版 | 推荐使用 `edu` 环境 |
+| Node.js | 18+ | 前端 Vite / React |
+| Git | 任意新版 | 代码管理 |
+
+## 2. 克隆项目
+
+```powershell
+git clone <repository-url>
 cd edu-ai
 ```
 
-### 3. 配置环境变量
+## 3. 配置后端环境变量
 
-```bash
-# 复制环境变量模板
-cp backend/.env.example backend/.env
-
-# 编辑 .env，填入你的 API Key
-# DASHSCOPE_API_KEY=你的通义千问Key
-# DEEPSEEK_API_KEY=你的DeepSeek Key
-# ZHIPU_API_KEY=你的智谱Key（可选）
+```powershell
+Copy-Item backend\.env.example backend\.env
 ```
 
-### 4. 启动基础服务（PostgreSQL + Redis + MinIO）
+根据实际情况编辑 `backend/.env`，至少需要确认：
 
-```bash
+```env
+DASHSCOPE_API_KEY=
+DEEPSEEK_API_KEY=
+ZHIPU_API_KEY=
+DEFAULT_LLM_PROVIDER=dashscope
+```
+
+本地直接运行后端时，数据库建议连接 `localhost`：
+
+```env
+DATABASE_URL=postgresql+asyncpg://eduai:eduai123@localhost:5432/eduai
+DATABASE_SYNC_URL=postgresql://eduai:eduai123@localhost:5432/eduai
+```
+
+如果 Redis / MinIO 也从本机访问，建议使用：
+
+```env
+REDIS_URL=redis://localhost:6379/0
+CELERY_BROKER_URL=redis://localhost:6379/1
+CELERY_RESULT_BACKEND=redis://localhost:6379/2
+MINIO_ENDPOINT=localhost:9000
+```
+
+## 4. 启动基础服务
+
+在仓库根目录执行：
+
+```powershell
 docker compose up postgres redis minio -d
-```
-
-验证服务是否启动成功：
-
-```bash
 docker compose ps
 ```
 
-应看到 3 个服务状态为 running。
+服务端口：
 
-MinIO 管理界面：http://localhost:9001（账号 minioadmin / minioadmin）
+| 服务 | 地址 |
+| --- | --- |
+| PostgreSQL | `localhost:5432` |
+| Redis | `localhost:6379` |
+| MinIO API | `localhost:9000` |
+| MinIO Console | `http://localhost:9001` |
 
-### 5. 后端启动
+MinIO 默认账号密码：`minioadmin / minioadmin`。
 
-#### 方式A：使用 Anaconda（推荐）
+## 5. 启动后端 API
 
-```bash
-# 创建 conda 环境
-conda create -n eduai python=3.11 -y
+首次安装依赖：
 
-# 激活环境
-conda activate eduai
-
-# 进入后端目录
+```powershell
+conda activate edu
 cd backend
-
-# 安装依赖
 pip install -r requirements.txt
+```
 
-# 数据库迁移（建表）
-set PYTHONPATH=%CD%
+执行数据库迁移：
+
+```powershell
+cd backend
+$env:PYTHONPATH = (Get-Location).Path
 alembic upgrade head
+```
 
+启动 FastAPI：
 
-# 启动后端
+```powershell
+cd backend
+$env:PYTHONPATH = (Get-Location).Path
 uvicorn main:app --reload --port 8000
 ```
 
-#### 方式B：使用 venv
+也可以使用项目脚本：
 
-```bash
-cd backend
-
-# 创建虚拟环境
-python -m venv .venv
-
-# 激活虚拟环境
-# Windows:
-.venv\Scripts\activate
-# Mac/Linux:
-source .venv/bin/activate
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 数据库迁移（建表）
-alembic upgrade head
-
-# 启动后端
-uvicorn main:app --reload --port 8000
+```powershell
+conda activate edu
+backend\script\migrate.cmd
+backend\script\dev.cmd
 ```
 
-后端 API 文档：http://localhost:8000/docs
+后端地址：
 
-### 6. 前端启动
+```text
+http://localhost:8000
+http://localhost:8000/docs
+```
 
-```bash
+## 6. 启动 Celery Worker
+
+资源解析、Embedding、异步批改等任务依赖 Worker。另开一个终端执行：
+
+```powershell
+conda activate edu
+backend\script\worker.cmd
+```
+
+等价手动命令：
+
+```powershell
+cd backend
+$env:PYTHONPATH = (Get-Location).Path
+celery -A workers.celery_app worker --loglevel=info -P solo -Q celery,embedding,grading
+```
+
+## 7. 启动前端
+
+首次安装依赖：
+
+```powershell
 cd frontend
-
-# 安装依赖
 npm install
+```
 
-# 启动开发服务器
+启动开发服务器：
+
+```powershell
+cd frontend
 npm run dev
 ```
 
-前端页面：http://localhost:5173
+前端地址：`http://localhost:5173`。
 
-### 7. 一键启动（便于开发）
-```bash
-# Windows 环境变量设置脚本
-cd backend
-# 注意先启动 docker 服务
-docker compose up postgres redis minio -d # 启动基础服务 数据库、缓存、文件存储
-# 等待服务启动后执行 10s左右
-cd script
-dev.cmd
-# 新建终端执行
-migrate.cmd
-# 这会自动设置环境变量、运行数据库迁移、启动后端和前端
-```
+## 8. Docker 部署/演示启动
 
-### 8. 启动（部署/演示时使用）
+如果需要一次性启动后端、Worker 和基础服务：
 
-部署或演示时，可以用 Docker 一次性启动所有服务（包括后端代码）：
-
-```bash
+```powershell
 docker compose up -d
 ```
 
-这会启动 5 个容器：
+这会启动：
 
 | 容器 | 说明 |
-|------|------|
-| postgres | 数据库 |
-| redis | 缓存 |
-| minio | 文件存储 |
-| backend | FastAPI 后端（你的Python代码） |
-| celery-worker | 异步任务（批改、Embedding） |
+| --- | --- |
+| `postgres` | PostgreSQL + pgvector |
+| `redis` | 缓存与 Celery Broker |
+| `minio` | 对象存储 |
+| `backend` | FastAPI 后端 |
+| `celery-worker` | 异步任务 Worker |
 
-> **注意**：日常开发时不建议用这种方式，因为改代码后需要重新构建镜像。
-> 开发时推荐第 4+5 步的方式：Docker 只跑数据库，Python 代码本地跑（支持热更新）。
+注意：全 Docker 方式适合部署/演示。日常开发更推荐本地启动后端，因为修改代码后不需要重建镜像。
 
-前端始终需要单独 `npm run dev` 启动。
+## 9. 测试命令
 
-## 项目结构
+后端自动化测试：
 
-```
-edu-ai/
-├── backend/           # Python 后端（FastAPI）
-│   ├── main.py        # 入口
-│   ├── core/          # 配置、数据库、认证
-│   ├── models/        # 数据库模型
-│   ├── api/routes/    # API 路由
-│   ├── agent_core/    # Agent SDK + LLM Provider
-│   ├── education/     # 批改、学情、练习引擎
-│   ├── platform_adapter/  # 超星/钉钉适配
-│   └── workers/       # Celery 异步任务
-├── frontend/          # React 前端
-│   └── src/
-│       ├── pages/     # 页面组件
-│       ├── components/# 公共组件
-│       └── services/  # API 封装
-├── docker-compose.yml # 服务编排
-└── docs/              # 文档
+```powershell
+conda activate edu
+pytest backend/tests -q
 ```
 
-## 常用命令
+更稳定的截图命令：
 
-```bash
-# 查看服务状态
+```powershell
+conda run -n edu pytest backend/tests -q -p no:warnings --basetemp=D:\course\SEME\edu-ai\.pytest_tmp_clean -p no:cacheprovider
+```
+
+API 级 E2E 冒烟测试需要后端、数据库、Redis、MinIO、Worker 和 LLM 配置可用：
+
+```powershell
+conda activate edu
+python backend\script\test_api.py --base-url http://127.0.0.1:8000/api/v1 --poll-timeout 180
+```
+
+前端构建检查：
+
+```powershell
+cd frontend
+npm run build
+```
+
+## 10. 常用命令
+
+```powershell
+# 查看容器状态
 docker compose ps
 
-# 查看后端日志
+# 查看后端容器日志
 docker compose logs backend -f
 
-# 停止所有服务
+# 查看 worker 容器日志
+docker compose logs celery-worker -f
+
+# 停止容器
 docker compose down
 
-# 重建后端镜像（依赖变更后）
+# 重建后端镜像
 docker compose build backend
 
-# 数据库迁移（新增模型后）
-cd backend && alembic revision --autogenerate -m "描述" && alembic upgrade head
-
-# 前端构建生产版本
-cd frontend && npm run build
-```
-## 团队分工
-
-详见 [docs/plan-log.md](docs/plan-log.md)
-
-## 注意事项
-
-- 本机运行后端时，DATABASE_URL 应连接 localhost
-- 容器内运行后端时，DATABASE_URL 应连接 postgres
-- alembic 请在 backend/ 目录执行
-- 测试通义千问时请使用 DashScope API Key，而不是 DashVector API Key
-
-## 环境一致性建议
-
-为减少“我这里能跑、你那里不能跑”的情况，建议所有成员统一按下面方式初始化后端环境：
-
-```bash
+# 生成并执行数据库迁移
 cd backend
-pip install -r requirements.txt
-set PYTHONPATH=%CD%
+alembic revision --autogenerate -m "describe change"
 alembic upgrade head
-python script/check_env.py
 ```
 
-如果还需要验证大模型通信，可执行：
+## 11. 项目结构
 
-```bash
-python script/check_env.py --check-llm
+```text
+edu-ai/
+├── backend/                 # FastAPI 后端
+│   ├── api/routes/           # API 路由
+│   ├── agent_core/           # Agent、RAG、LLM Provider
+│   ├── core/                 # 配置、数据库、认证
+│   ├── education/            # 练习、学情、教学逻辑
+│   ├── models/               # 数据库模型
+│   ├── platform_adapter/     # 平台模拟接入
+│   ├── script/               # 启动、检查、测试脚本
+│   ├── tests/                # 后端自动化测试
+│   └── workers/              # Celery 异步任务
+├── frontend/                 # React + Vite 前端
+│   └── src/
+├── data/                     # 评测数据与样例数据
+├── docs/                     # RBS/WBS、测试报告、设计与交付文档
+├── docker-compose.yml        # 基础服务与部署编排
+├── README.md                 # 启动说明
+└── Intro_pro_readme.md       # 项目介绍
 ```
 
-脚本会检查以下内容：
+## 12. 注意事项
 
-- Python 版本是否满足要求
-- PostgreSQL / Redis / MinIO 端口是否可连接
-- FastAPI 健康检查接口是否正常
-- 数据库是否可连接且业务表是否存在
-- 可选：LLM API 是否能返回 `API OK`
+- 本地运行后端时，`DATABASE_URL` 应连接 `localhost`。
+- Docker 容器内运行后端时，`DATABASE_URL` 应连接 `postgres`。
+- 本地运行 Worker 时，`CELERY_BROKER_URL` 建议连接 `localhost`。
+- `alembic` 建议在 `backend/` 目录执行，并设置 `PYTHONPATH`。
+- 前端默认访问后端 API，请确认后端 `8000` 端口已启动。
+- LLM 功能需要配置可用的 API Key，否则问答、批改、练习生成等功能会受限。
