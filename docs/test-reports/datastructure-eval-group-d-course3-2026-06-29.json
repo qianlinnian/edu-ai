@@ -1,0 +1,211 @@
+{
+  "course_id": 3,
+  "checklist_path": "/tmp/datastructure-checklist-group-d-extended-2026-06-29.yaml",
+  "total_questions": 20,
+  "correct": 20,
+  "accuracy": 1.0,
+  "retrieval_nonempty": 20,
+  "wrong_questions": [],
+  "results": [
+    {
+      "index": 1,
+      "question": "栈这种线性结构的典型操作特征是？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "栈栈( ( Stack )Stack )\n队列队列 ( ( Queue )Queue )\n优先队列优先队列 ((Priority Queue)Priority Queue)\n小结小结\n栈栈( Stack )( Stack )",
+      "response": "ANSWER: B\nREASON: 栈的特点是后进先出 (LIFO)。"
+    },
+    {
+      "index": 2,
+      "question": "队列这种线性结构的典型操作特征是？",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "合中的单元素具有线性有序关系\n ，\n此关系可记作\n “\n<”\n，\n表示\n“\n优先于\n”\n。\n\n若\na\n,\nb\n是集合中的两个单元素\n ，\n则\na\n<\nb\n,\na==b\n ,\na\n>\nb\n三者必居其一；\n\n若\na\n,\nb\n,\nc\n是集合中",
+      "response": "ANSWER: C\nREASON: 队列的进队和出队操作遵循先进先出的原则。"
+    },
+    {
+      "index": 3,
+      "question": "二叉树第 i 层上最多有多少个结点？",
+      "expected": "A",
+      "actual": "A",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "[Slide 10]\n性质5  如果将一棵有n个结点的完全二叉树自\n顶向下，同一层自左向右连续给结点编号0, 1, 2, …, n-1，然后按此结点编号将树中各结点顺序地存放于一个一维数组中, 并简称编号为i的结点为结点i (0 ≤ i ≤",
+      "response": "ANSWER: A\nREASON: 二叉树第 i 层上最多有 2^(i-1) 个结点。"
+    },
+    {
+      "index": 4,
+      "question": "具有 n 个结点的完全二叉树，其高度通常为？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "度为若设二叉树的高度为 hh，，则共有则共有 hh+1+1层。除层。除\n第第h h 层外，其它各层层外，其它各层 (0 (0 ∼∼hh--11) ) 的结点数都达的结点数都达\n到最大个数，第到最大个数，第 h h 层从右向左连续缺若干结层从",
+      "response": "ANSWER: B\nREASON: 根据性质4，具有 n 个结点的完全二叉树的高度为 ⎡log2(n+1)⎤ - 1。"
+    },
+    {
+      "index": 5,
+      "question": "在任意非空二叉树中，若 n0 表示叶子结点数、n2 表示度为 2 的结点数，则有？",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "的二叉树最多有2k+\n\nk+1-1个结点。\n\n个结点。\n\n(k ≥-1)\n\n1)\n\n[证明用求等比级数前\n\n证明用求等比级数前k项和的公式\n\n项和的公式]\n\n性质\n\n性质3 对任何一棵二叉树\n\n对任何一棵二叉树, , 如果其叶结点个数\n\n如",
+      "response": "ANSWER: C\nREASON: 根据二叉树的性质，n0 = n2 + 1。"
+    },
+    {
+      "index": 6,
+      "question": "二叉树的前序遍历顺序是？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "知一棵二叉树的前序遍\n已知一棵二叉树的前序遍\n历的结果序列是\nABECDFGHIJ\n中序遍历的结果序列是\nEBCDAFHIGJ\n试画出这棵二叉树。\n137 | 【解答 | 18 | 103 | 【解答\n解答】前序序列\n前序序列ABECDFG",
+      "response": "ANSWER: B\nREASON: 前序遍历二叉树的顺序是访问根结点，然后前序遍历左子树，最后前序遍历右子树。"
+    },
+    {
+      "index": 7,
+      "question": "二叉树的中序遍历顺序是？",
+      "expected": "A",
+      "actual": "A",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "中序遍历的结果序列是\n\nEBCDAFHIGJ\n\n试画出这棵二叉树。\n\n第 137 页\n\n【解答\n\n【解答\n\n解答】前序序列\n\n前序序列ABECDFGHIJ\n\nBECDFGHIJ，\n\n中序序列\n\n中序序列EBCD\n\nEBCDAFHIGJ\n\nF",
+      "response": "ANSWER: A\nREASON: 中根次序遍历的规则是左-根-右。"
+    },
+    {
+      "index": 8,
+      "question": "二叉树的后序遍历顺序是？",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "根次序遍历的规则：后根次序遍历的规则：\n若森林若森林 FF为空，返为空，返\n回；否则回；否则\n))后根次序遍历第一后根次序遍历第一\n棵树的子树森林；棵树的子树森林；\n))后根次序遍历其它后根次序遍历其它\n树组成的森林；树组成的森林；\n)",
+      "response": "ANSWER: C\nREASON: 后序遍历二叉树的顺序是左-右-根。"
+    },
+    {
+      "index": 9,
+      "question": "图的深度优先遍历通常最接近使用哪种辅助结构实现？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "，再访问它们的所有从这些访问过的顶点出发，再访问它们的所有\n还未被访问过的邻接顶点，还未被访问过的邻接顶点， ……如此做下去，如此做下去，\n直到图中所有顶点都被访问到为止。直到图中所有顶点都被访问到为止。\n广度优先搜索是一种分层的搜索过",
+      "response": "ANSWER: B\nREASON: 深度优先搜索是一个递归的过程，其算法也是递归的，这与栈的后进先出特性相匹配。"
+    },
+    {
+      "index": 10,
+      "question": "图的广度优先遍历通常最接近使用哪种辅助结构实现？",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "需时间为 O(O(nn))，，则遍历图中所有则遍历图中所有\n的顶点所需的时间为的顶点所需的时间为 O(O(nn22))。。\n广度优先搜索广度优先搜索 BFS BFS ( Breadth First Search( Breadth First",
+      "response": "ANSWER: C\nREASON: 广度优先搜索使用队列来访问图中的顶点。"
+    },
+    {
+      "index": 11,
+      "question": "拓扑排序结果存在的前提是图必须是？",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "出现有向环；相反，如果得不到满足必定不会出现有向环；相反，如果得不到满足\n要求的拓扑有序序列，则说明要求的拓扑有序序列，则说明 AOVAOV网络中存在网络中存在\n有向环，此有向环，此 AOVAOV网络所代表的工程是不可行的 。 网络所代表的",
+      "response": "ANSWER: C\nREASON: 拓扑排序要求图中不能存在有向环。"
+    },
+    {
+      "index": 12,
+      "question": "关键路径分析主要针对哪一类网络？",
+      "expected": "A",
+      "actual": "A",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "58\nel0    0    8    12   12 22   22 28  40   460    0    8    12   12 32   22  28  40   461     2     3     4     5     ",
+      "response": "ANSWER: A\nREASON: 关键路径分析主要针对AOE网，用于工程估算和确定关键活动。"
+    },
+    {
+      "index": 13,
+      "question": "折半查找能够成立的基本前提是？",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "arySearch ( x, mid +1,high );\nelse if (Element [mid].getKey ( ) > x)\nmid= BinarySearch ( x, low, mid -1 );\n}\nreturn mid;",
+      "response": "ANSWER: C\nREASON: 折半搜索要求元素是有序的。"
+    },
+    {
+      "index": 14,
+      "question": "二叉搜索树中，任一结点左子树上所有关键字都应？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "点\n 的最优二叉搜索树：\nT[0][2]\n ,\nT[1][3]\n , …,\n T[\nn\n-\n2][\nn\n]\n。在\n T[\ni\n-\n2][\ni\n]\n中包\n含两个关键码\n {\nkey\n[\ni\n-\n1],\nkey\n[\ni\n]\n}\n。其代价取分别\n",
+      "response": "ANSWER: B\nREASON: 二叉搜索树的性质决定了左子树上所有关键字都应小于该结点关键字。"
+    },
+    {
+      "index": 15,
+      "question": "平均情况下，快速排序的时间复杂度通常为？",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": ", / / ) (\n22\n若待排序对象序列中出现各种可能排列的概若待排序对象序列中出现各种可能排列的概\n率相同，则可取上述最好情况和最坏情况的率相同，则可取上述最好情况和最坏情况的\n平均情况。在平均情况下的关键码比较次数平均情况。在平均",
+      "response": "ANSWER: C\nREASON: 快速排序的平均计算时间是 o(n log n)。"
+    },
+    {
+      "index": 16,
+      "question": "直接插入排序属于哪一类排序性质？",
+      "expected": "A",
+      "actual": "A",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": ", / / ) (\n22\n若待排序对象序列中出现各种可能排列的概若待排序对象序列中出现各种可能排列的概\n率相同，则可取上述最好情况和最坏情况的率相同，则可取上述最好情况和最坏情况的\n平均情况。在平均情况下的关键码比较次数平均情况。在平均",
+      "response": "ANSWER: A\nREASON: 直接插入排序是一种稳定的排序方法。"
+    },
+    {
+      "index": 17,
+      "question": "堆排序属于哪一类排序性质？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "时间，但是这种排序方法虽然减少了许多排序时间，但是\n使用了较多的附加存储。使用了较多的附加存储。\n如果有如果有 n n 个对象，必须使用至少个对象，必须使用至少 22nn--1 1 个结点来个结点来\n存放胜者树。最多需要找到满足存放胜者",
+      "response": "ANSWER: B\nREASON: 堆排序是一个不稳定的排序方法。"
+    },
+    {
+      "index": 18,
+      "question": "在最大堆中，根结点的关键字应当？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "m，，可可\n以少于以少于 mm，，视关键码字节数及对象地址指针视关键码字节数及对象地址指针\n字节数而定。字节数而定。\n若设结点可容纳最大关键码数为若设结点可容纳最大关键码数为 mm11，，则指向则指向\n对象的地址指针也有对象的地址指针也有 ",
+      "response": "ANSWER: B\nREASON: 最大堆的根结点的关键字应当是最大的。"
+    },
+    {
+      "index": 19,
+      "question": "处理哈希冲突的常见方法之一是？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "出处理技术。因为任解决冲突的方法又称为溢出处理技术。因为任\n一种散列函数也不能避免产生冲突，因此选择好一种散列函数也不能避免产生冲突，因此选择好\n的解决冲突溢出的方法十分重要。的解决冲突溢出的方法十分重要。\n为了减少冲突，对散列表加以改造。",
+      "response": "ANSWER: B\nREASON: 线性探查法是处理哈希冲突的一种方法。"
+    },
+    {
+      "index": 20,
+      "question": "散列表的装填因子越大，通常表示？",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "1\ne α − 11\n   链 地 址 法\n  (同义词子表法) 2α+ 1\n              α ≈ + α−αe\n散列表的装填因子散列表的装填因子 αα表明了表中的装满程度。表明了表中的装满程度。\n越大，说明表越满，再插入",
+      "response": "ANSWER: C\nREASON: 装填因子越大，说明表越满，再插入新元素时发生冲突的可能性就越大。"
+    }
+  ]
+}

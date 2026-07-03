@@ -1,0 +1,38 @@
+{
+  "metric": "score_band_match_accuracy",
+  "total_cases": 3,
+  "passed_cases": 3,
+  "accuracy": 1.0,
+  "results": [
+    {
+      "id": "grading_eval_bad_recursion",
+      "label": "bad",
+      "expected_min": 0,
+      "expected_max": 40,
+      "actual_score": 20.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission attempts to explain recursion but contains significant misunderstandings. The student correctly identifies that recursion involves a function calling itself, but incorrectly states that termination conditions are unnecessary. This fundamental error significantly impacts the correctness of the answer."
+    },
+    {
+      "id": "grading_eval_mid_recursion",
+      "label": "mid",
+      "expected_min": 60,
+      "expected_max": 80,
+      "actual_score": 65.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The student provided a basic explanation of recursion with a termination condition and parameter convergence, but the explanation lacks depth and completeness. The answer is partially correct but could benefit from more detailed examples and clearer explanation of how the recursion progresses."
+    },
+    {
+      "id": "grading_eval_good_recursion",
+      "label": "good",
+      "expected_min": 85,
+      "expected_max": 100,
+      "actual_score": 85.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The student provided a good explanation of recursion with proper terminology and structure. They correctly identified the base case and explained parameter convergence, though the explanation could be more detailed and clearer in some parts."
+    }
+  ]
+}

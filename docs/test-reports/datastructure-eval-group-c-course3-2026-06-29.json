@@ -1,0 +1,61 @@
+{
+  "course_id": 3,
+  "checklist_path": "/tmp/datastructure-checklist-group-c-2026-06-29.yaml",
+  "total_questions": 5,
+  "correct": 5,
+  "accuracy": 1.0,
+  "retrieval_nonempty": 5,
+  "wrong_questions": [],
+  "results": [
+    {
+      "index": 1,
+      "question": "堆排序的时间复杂度为？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "时间，但是这种排序方法虽然减少了许多排序时间，但是\n使用了较多的附加存储。使用了较多的附加存储。\n如果有如果有 n n 个对象，必须使用至少个对象，必须使用至少 22nn--1 1 个结点来个结点来\n存放胜者树。最多需要找到满足存放胜者",
+      "response": "ANSWER: B\nREASON: 堆排序的时间复杂度为 O(n log n)。"
+    },
+    {
+      "index": 2,
+      "question": "快速排序性能最差的情况是？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "的水平，比直接插其排序速度退化到简单排序的水平，比直接插\n入排序还慢。占用附加存储入排序还慢。占用附加存储 ((即栈即栈 ))将达到将达到 o(o(nn))。。\n若能更合理地选择基准对象，使得每次划分所若能更合理地选择基准对象，使得每次",
+      "response": "ANSWER: B\nREASON: 当待排序关键码序列已经基本有序时，快速排序显著变慢。"
+    },
+    {
+      "index": 3,
+      "question": "哈希函数设计原则不包括：",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "函数时的几点要求：构造散列函数时的几点要求：\n散列函数的定义域必须包括需要存储的全部关散列函数的定义域必须包括需要存储的全部关\n键码，如果散列表允许有键码，如果散列表允许有 m m 个地址时个地址时 ,  ,  其值域其值域\n必须在必须",
+      "response": "ANSWER: C\nREASON: 材料中未提及单调性作为哈希函数的设计原则。"
+    },
+    {
+      "index": 4,
+      "question": "负载因子定义为：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "1\ne α − 11\n   链 地 址 法\n  (同义词子表法) 2α+ 1\n              α ≈ + α−αe\n散列表的装填因子散列表的装填因子 αα表明了表中的装满程度。表明了表中的装满程度。\n越大，说明表越满，再插入",
+      "response": "ANSWER: B\nREASON: 装填因子α表明了表中的装满程度，定义为元素数/表长。"
+    },
+    {
+      "index": 5,
+      "question": "B树主要用于：",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "de (q);\nwhile ( j<= q→n&& q→ptr [j] != p )j++;\nif ( !j ) LeftAdjust (p, q, d, j );    //调整\nelseRightAdjust ( p, q, d, j ",
+      "response": "ANSWER: C\nREASON: B树的搜索时间与B树的阶数和高度直接有关，适用于外存索引。"
+    }
+  ]
+}

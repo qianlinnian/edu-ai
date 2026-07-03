@@ -1,0 +1,144 @@
+{
+  "metric": "score_band_match_accuracy",
+  "course_id": 3,
+  "cases_path": "D:\\course\\SEME\\edu-ai\\data\\test\\grading-eval-cases-recursion-extra-2026-06-29.yaml",
+  "total_cases": 12,
+  "passed_cases": 12,
+  "accuracy": 1.0,
+  "by_label": {
+    "bad": {
+      "total": 4,
+      "passed": 4
+    },
+    "mid": {
+      "total": 4,
+      "passed": 4
+    },
+    "good": {
+      "total": 4,
+      "passed": 4
+    }
+  },
+  "results": [
+    {
+      "id": "grading_eval_bad_08",
+      "label": "bad",
+      "expected_min": 0.0,
+      "expected_max": 40.0,
+      "actual_score": 15.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission demonstrates a fundamental misunderstanding of recursion. It incorrectly states that recursion doesn't require a base case and that the computer will stop automatically, which is incorrect and could lead to infinite recursion. The answer lacks proper definitions and examples."
+    },
+    {
+      "id": "grading_eval_bad_09",
+      "label": "bad",
+      "expected_min": 0.0,
+      "expected_max": 42.0,
+      "actual_score": 15.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission demonstrates a fundamental misunderstanding of recursion. It incorrectly equates recursion with loops and dismisses the importance of stopping conditions, which are actually crucial in recursive functions. The answer lacks proper definitions of key concepts and fails to provide a coherent explanation of how recursion works."
+    },
+    {
+      "id": "grading_eval_bad_10",
+      "label": "bad",
+      "expected_min": 0.0,
+      "expected_max": 45.0,
+      "actual_score": 35.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission provides a basic definition of recursion but lacks a proper explanation of base cases and parameter convergence. The answer is incomplete and contains uncertainty about key concepts."
+    },
+    {
+      "id": "grading_eval_bad_11",
+      "label": "bad",
+      "expected_min": 0.0,
+      "expected_max": 45.0,
+      "actual_score": 15.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission contains significant misunderstandings about recursion and fails to address key concepts like base cases and parameter convergence. The answer is incorrect in its assertion that n does not need to get smaller in factorial problems, which contradicts fundamental recursion principles."
+    },
+    {
+      "id": "grading_eval_mid_08",
+      "label": "mid",
+      "expected_min": 58.0,
+      "expected_max": 80.0,
+      "actual_score": 65.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission provides a basic definition of recursion and mentions a termination condition, but lacks a complete explanation of parameter convergence and the importance of base cases. The example is appropriate but not fully developed."
+    },
+    {
+      "id": "grading_eval_mid_09",
+      "label": "mid",
+      "expected_min": 60.0,
+      "expected_max": 82.0,
+      "actual_score": 65.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission correctly identifies the two main components of recursion (stopping condition and recursive step) and mentions parameter convergence with the factorial example. However, the explanation is quite brief and lacks the systematic structure expected for a comprehensive answer."
+    },
+    {
+      "id": "grading_eval_mid_10",
+      "label": "mid",
+      "expected_min": 60.0,
+      "expected_max": 82.0,
+      "actual_score": 65.0,
+      "pass": true,
+      "source": "llm+heuristic_floor",
+      "overall_comment": "The submission provides a basic definition of recursion and mentions the importance of a base case, but lacks depth in explaining how recursion works and how parameters converge toward the base case. The example of Fibonacci is mentioned but not properly explained to illustrate the recursive concept."
+    },
+    {
+      "id": "grading_eval_mid_11",
+      "label": "mid",
+      "expected_min": 62.0,
+      "expected_max": 82.0,
+      "actual_score": 65.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission correctly identifies the basic concept of recursion and mentions the importance of termination conditions and parameter convergence. However, it lacks a complete definition of recursion, doesn't provide a full example, and could be more structured in its explanation."
+    },
+    {
+      "id": "grading_eval_good_08",
+      "label": "good",
+      "expected_min": 84.0,
+      "expected_max": 100.0,
+      "actual_score": 99.0,
+      "pass": true,
+      "source": "llm+heuristic_floor",
+      "overall_comment": "The submission provides a clear and concise explanation of recursion with appropriate terminology and a good example. It correctly identifies the base case and explains parameter convergence. However, it could benefit from more detailed explanations of how recursion works and why the base case is essential."
+    },
+    {
+      "id": "grading_eval_good_09",
+      "label": "good",
+      "expected_min": 85.0,
+      "expected_max": 100.0,
+      "actual_score": 99.0,
+      "pass": true,
+      "source": "llm+heuristic_floor",
+      "overall_comment": "The submission provides a good explanation of recursion with clear definitions of key concepts. It correctly identifies the base case and recursive progression, though the example could be more detailed. The explanation is coherent and well-structured."
+    },
+    {
+      "id": "grading_eval_good_10",
+      "label": "good",
+      "expected_min": 84.0,
+      "expected_max": 100.0,
+      "actual_score": 85.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The student provides a clear and concise explanation of recursion that covers the essential components. The answer correctly identifies the base case and recursive case in the factorial example, and explains how parameters converge toward termination. However, the definition of recursion could be more comprehensive, and the explanation could benefit from a more detailed example to fully demonstrate the concept."
+    },
+    {
+      "id": "grading_eval_good_11",
+      "label": "good",
+      "expected_min": 86.0,
+      "expected_max": 100.0,
+      "actual_score": 99.0,
+      "pass": true,
+      "source": "llm+heuristic_floor",
+      "overall_comment": "The submission provides a correct definition of recursion and mentions important concepts like base case and termination conditions. However, it lacks a detailed explanation of how each recursive call moves toward the base case, which is a key requirement according to the reference answer. The examples mentioned (Hanoi Tower, factorial, tree traversal) are appropriate but not explained in sufficient detail."
+    }
+  ]
+}

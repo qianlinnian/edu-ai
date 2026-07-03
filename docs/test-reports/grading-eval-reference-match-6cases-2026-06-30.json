@@ -1,0 +1,91 @@
+{
+  "metric": "score_band_match_accuracy",
+  "course_id": 3,
+  "cases_path": "D:\\course\\SEME\\edu-ai\\data\\test\\grading-eval-cases-reference-match-6cases-2026-06-30.yaml",
+  "assignment": {
+    "title": "Draft grading evaluation: explicit reference-answer match",
+    "description": "Answer according to the teacher-provided standard answer. This set is used to verify deterministic full-score behavior when the submission matches the reference answer.\n",
+    "assignment_type": "text",
+    "max_score": 100,
+    "rubric": {
+      "dimensions": [
+        {
+          "name": "correctness",
+          "max_score": 60,
+          "criteria": "Answer content matches the required result."
+        },
+        {
+          "name": "completeness",
+          "max_score": 25,
+          "criteria": "Required answer is fully present."
+        },
+        {
+          "name": "clarity",
+          "max_score": 15,
+          "criteria": "Answer is clearly stated."
+        }
+      ]
+    },
+    "reference_answer": "标准答案是：栈是后进先出，队列是先进先出。",
+    "knowledge_points": []
+  },
+  "total_cases": 4,
+  "passed_cases": 3,
+  "accuracy": 0.75,
+  "by_label": {
+    "full": {
+      "total": 2,
+      "passed": 2
+    },
+    "partial": {
+      "total": 1,
+      "passed": 0
+    },
+    "low": {
+      "total": 1,
+      "passed": 1
+    }
+  },
+  "results": [
+    {
+      "id": "grading_eval_refmatch_01",
+      "label": "full",
+      "expected_min": 100.0,
+      "expected_max": 100.0,
+      "actual_score": 100.0,
+      "pass": true,
+      "source": "llm+reference_match_rule",
+      "overall_comment": "Submission matches the teacher-provided reference answer; deterministic full-score rule applied. The submission perfectly matches the reference answer, demonstrating complete understanding of the concepts."
+    },
+    {
+      "id": "grading_eval_refmatch_03",
+      "label": "full",
+      "expected_min": 100.0,
+      "expected_max": 100.0,
+      "actual_score": 100.0,
+      "pass": true,
+      "source": "llm+reference_match_rule",
+      "overall_comment": "Submission matches the teacher-provided reference answer; deterministic full-score rule applied. The submission perfectly matches the reference answer, demonstrating complete understanding of the concepts."
+    },
+    {
+      "id": "grading_eval_refmatch_04",
+      "label": "partial",
+      "expected_min": 50.0,
+      "expected_max": 80.0,
+      "actual_score": 45.0,
+      "pass": false,
+      "source": "llm",
+      "overall_comment": "The submission partially matches the reference answer but is incomplete. It correctly identifies the stack's LIFO (后进先出) property but fails to mention the queue's FIFO (先进先出) property as required by the reference answer."
+    },
+    {
+      "id": "grading_eval_refmatch_05",
+      "label": "low",
+      "expected_min": 0.0,
+      "expected_max": 40.0,
+      "actual_score": 15.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission contains fundamental errors regarding the definitions of stack and queue data structures. The answer incorrectly reverses the standard definitions of both data structures."
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+{
+  "course_id": 3,
+  "checklist_path": "/tmp/datastructure-checklist-group-b-2026-06-29.yaml",
+  "total_questions": 10,
+  "correct": 10,
+  "accuracy": 1.0,
+  "retrieval_nonempty": 10,
+  "wrong_questions": [],
+  "results": [
+    {
+      "index": 1,
+      "question": "森林转二叉树采用？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "n result;\n}\n森林与二叉树的转换森林与二叉树的转换\n森林与二叉树的对应关系森林与二叉树的对应关系\n(1) (1) 森林转化成二叉树的规则森林转化成二叉树的规则\ncc若若F F 为空为空，即，即 nn= 0= 0，，则则\n对应的二叉",
+      "response": "ANSWER: B\nREASON: 森林转化成二叉树的规则中提到，森林中的第一棵树的根作为二叉树的根，其左子树为该树根的子树，右子树为其余树构成的森林。"
+    },
+    {
+      "index": 2,
+      "question": "树的高度定义为：",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "树的对应关系\n¾¾树的先根树的先根 ··后根后根 ··层次遍历层次遍历\n堆堆堆的定义、堆的插入与删除堆的定义、堆的插入与删除\n¾¾形成堆时用到的向下调整算法形成堆时用到的向下调整算法\n¾¾形成堆时比较次数的上界估计形成堆时比较次数的上界估",
+      "response": "ANSWER: C\nREASON: 树的高度定义为最大层数。"
+    },
+    {
+      "index": 3,
+      "question": "顺序查找的平均查找长度（成功）为？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "“ 找到下标 ”<<Location << endl;\nelse cout << “ 没有找到 .\\n”;\n}\n顺序搜索的平均搜索长度\n\n\n 1\n01\n0n\niin\nii i succ p cp ASL ) 1  (   ",
+      "response": "ANSWER: B. n/2\nREASON: 在等概率情形，顺序查找的平均查找长度为 (n+1)/2。"
+    },
+    {
+      "index": 4,
+      "question": "二分查找失败的时间复杂度为：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "的时间于关键码所在的层次，搜索不成功所需的时间\n取决于树的高度。如果我们定义取决于树的高度。如果我们定义 B_B_树的高度树的高度 h h\n为失败结点所在的层次，需要了解树的高度为失败结点所在的层次，需要了解树的高度 h h 与与\n树中的关",
+      "response": "ANSWER: B\nREASON: 二分查找的失败情形时间复杂度为O(log n)。"
+    },
+    {
+      "index": 5,
+      "question": "二叉搜索树查找性能取决于：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "//\n二叉搜索树对象\nStack <BstNode <Type> * > itrStack ;    //\n迭代栈\n}\n与二叉搜索树相关的中序游标类\n最优二叉搜索树\n\n对于有\n n\n个关键码的集合，其关键码有\n n\n!\n种\n不同的排列，可",
+      "response": "ANSWER: B\nREASON: 二叉搜索树的搜索性能直接受树的高度影响。"
+    },
+    {
+      "index": 6,
+      "question": "图的邻接矩阵适用于：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "有一个，还有一个 表示各个顶点之间关表示各个顶点之间关\n系系的的邻接矩阵邻接矩阵 。。\n设图设图 A = (A = ( VV, , EE))是一个有是一个有 n n 个顶点的图，则图的个顶点的图，则图的\n邻接矩阵是一个二维数组邻接矩阵是",
+      "response": "ANSWER: B\nREASON: 邻接矩阵适用于稠密图，因为稀疏图使用邻接矩阵会浪费大量空间。"
+    },
+    {
+      "index": 7,
+      "question": "无向图中边数为 e，则邻接矩阵中非零元素个数为？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "有一个，还有一个 表示各个顶点之间关表示各个顶点之间关\n系系的的邻接矩阵邻接矩阵 。。\n设图设图 A = (A = ( VV, , EE))是一个有是一个有 n n 个顶点的图，则图的个顶点的图，则图的\n邻接矩阵是一个二维数组邻接矩阵是",
+      "response": "ANSWER: B\nREASON: 无向图的邻接矩阵是对称的，每条边在矩阵中对应两个非零元素。"
+    },
+    {
+      "index": 8,
+      "question": "拓扑排序适用于：",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "握 : : 活动网络的拓扑排序算法活动网络的拓扑排序算法\n掌握掌握 : : 求解关键路径的方法求解关键路径的方法\n理解理解 : : 求解最短路径的求解最短路径的 DijkstraDijkstra方法方法 ((不不\n要求算法要求算法 ",
+      "response": "ANSWER: B\nREASON: 拓扑排序适用于有向无环图。"
+    },
+    {
+      "index": 9,
+      "question": "Dijkstra算法不能处理？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "给定一个带权有向图 DD与源点与源点 vv，，\n求从求从 vv到到DD中其它顶点的最短路径。中其它顶点的最短路径。 限定各边上限定各边上\n的权值大于或等于的权值大于或等于 00。。\n为求得这些最短路径，为求得这些最短路径， Dijkst",
+      "response": "ANSWER: B\nREASON: Dijkstra算法在边上权值为任意值（包括负值）的情况下，不一定能得到正确的结果。"
+    },
+    {
+      "index": 10,
+      "question": "稳定排序算法是：",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "j]]，，且在排且在排\n序之前，对象序之前，对象 rr[[ii]]排在排在 rr[[jj]]前面。如果在排序之前面。如果在排序之\n后，对象后，对象 rr[[ii]]仍在对象仍在对象 rr[[jj]]的前面，则称这个排序的前面，则称这个排序\n",
+      "response": "ANSWER: C\nREASON: 归并排序是一种稳定的排序方法。"
+    }
+  ]
+}

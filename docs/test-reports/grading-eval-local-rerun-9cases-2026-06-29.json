@@ -1,0 +1,114 @@
+{
+  "metric": "score_band_match_accuracy",
+  "course_id": 3,
+  "cases_path": "D:\\course\\SEME\\edu-ai\\data\\test\\grading-eval-cases-recursion-2026-06-29.yaml",
+  "total_cases": 9,
+  "passed_cases": 9,
+  "accuracy": 1.0,
+  "by_label": {
+    "bad": {
+      "total": 3,
+      "passed": 3
+    },
+    "mid": {
+      "total": 3,
+      "passed": 3
+    },
+    "good": {
+      "total": 3,
+      "passed": 3
+    }
+  },
+  "results": [
+    {
+      "id": "grading_eval_bad_01",
+      "label": "bad",
+      "expected_min": 0.0,
+      "expected_max": 40.0,
+      "actual_score": 20.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission provides a basic definition of recursion but lacks critical understanding of termination conditions and parameter convergence, which are essential concepts in recursion. The example given (factorial) is appropriate but the explanation of termination conditions is incorrect."
+    },
+    {
+      "id": "grading_eval_bad_02",
+      "label": "bad",
+      "expected_min": 0.0,
+      "expected_max": 45.0,
+      "actual_score": 30.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission provides a basic definition of recursion but lacks important technical details about base cases and parameter convergence. The explanation is too simplistic and doesn't demonstrate a proper understanding of how recursion works in programming."
+    },
+    {
+      "id": "grading_eval_bad_03",
+      "label": "bad",
+      "expected_min": 0.0,
+      "expected_max": 45.0,
+      "actual_score": 20.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission attempts to explain recursion but contains significant misconceptions about base cases and termination conditions. The student incorrectly believes that recursion automatically returns to the previous level without needing explicit termination conditions, which is a fundamental misunderstanding of how recursion works."
+    },
+    {
+      "id": "grading_eval_mid_01",
+      "label": "mid",
+      "expected_min": 55.0,
+      "expected_max": 80.0,
+      "actual_score": 70.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission correctly defines recursion and mentions the importance of a termination condition, but lacks a complete explanation of parameter convergence and doesn't provide a clear example. The explanation is somewhat brief but coherent."
+    },
+    {
+      "id": "grading_eval_mid_02",
+      "label": "mid",
+      "expected_min": 60.0,
+      "expected_max": 82.0,
+      "actual_score": 65.0,
+      "pass": true,
+      "source": "llm",
+      "overall_comment": "The submission correctly identifies the key components of recursion (recursive formula and termination condition) and provides a simple example of factorial calculation. However, it lacks sufficient depth in explaining why termination conditions are necessary and doesn't fully explain how parameters converge toward the base case."
+    },
+    {
+      "id": "grading_eval_mid_03",
+      "label": "mid",
+      "expected_min": 58.0,
+      "expected_max": 80.0,
+      "actual_score": 65.0,
+      "pass": true,
+      "source": "llm+heuristic_floor",
+      "overall_comment": "The submission provides a basic understanding of recursion but lacks depth in several key areas. While it correctly identifies that recursion breaks down large problems and mentions the need for an ending condition, it fails to clearly distinguish between base case and recursive case, and doesn't adequately explain parameter convergence."
+    },
+    {
+      "id": "grading_eval_good_01",
+      "label": "good",
+      "expected_min": 82.0,
+      "expected_max": 100.0,
+      "actual_score": 100.0,
+      "pass": true,
+      "source": "llm+heuristic_floor",
+      "overall_comment": "The student has provided a concise and accurate explanation of recursion, including the base case and parameter convergence. The explanation covers the key concepts effectively, though it could benefit from a more detailed example to enhance completeness."
+    },
+    {
+      "id": "grading_eval_good_02",
+      "label": "good",
+      "expected_min": 85.0,
+      "expected_max": 100.0,
+      "actual_score": 100.0,
+      "pass": true,
+      "source": "llm+heuristic_floor",
+      "overall_comment": "The submission provides a good explanation of recursion with clear definitions of base case and recursive progression. However, it lacks a concrete example to illustrate the concepts and could benefit from more detailed explanation of parameter convergence."
+    },
+    {
+      "id": "grading_eval_good_03",
+      "label": "good",
+      "expected_min": 84.0,
+      "expected_max": 100.0,
+      "actual_score": 100.0,
+      "pass": true,
+      "source": "llm+heuristic_floor",
+      "overall_comment": "The submission provides a clear explanation of recursion using the factorial example, correctly identifying the base case and recursive progression. However, it could benefit from a more detailed explanation of parameter convergence and additional examples to strengthen the completeness."
+    }
+  ]
+}

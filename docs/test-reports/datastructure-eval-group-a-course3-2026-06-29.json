@@ -1,0 +1,111 @@
+{
+  "course_id": 3,
+  "checklist_path": "/tmp/datastructure-checklist-group-a-2026-06-29.yaml",
+  "total_questions": 10,
+  "correct": 10,
+  "accuracy": 1.0,
+  "retrieval_nonempty": 10,
+  "wrong_questions": [],
+  "results": [
+    {
+      "index": 1,
+      "question": "在长度为 n 的顺序表中，在第 i 个位置插入一个元素，平均需要移动元素个数为？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "象个数。列的初始排列无关，仅依赖于对象个数。 在在\n插入第插入第 i i 个对象时，需要经过个对象时，需要经过 ⎣⎣loglog22ii⎦⎦+1  +1  次关次关\n键码比较，才能确定它应插入的位置。键码比较，才能确定它应插入的位置。 因因",
+      "response": "ANSWER: B\nREASON: 课程材料中没有直接提供答案，但根据排序和插入操作的讨论，平均情况下需要移动 n/2 个元素。"
+    },
+    {
+      "index": 2,
+      "question": "单链表中删除某节点 p 的前驱节点，已知 p 指针，时间复杂度为：",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "( p→link ==NULL ) last= newnode;\np→link = newnode ;\nq= p→link;\np→link = q→ link;\ndelete q ;\nif ( p→link == NULL )last = ",
+      "response": "ANSWER: C\nREASON: 从给定材料中，删除操作需要找到前驱节点，这通常需要遍历链表，时间复杂度为 O(n)。"
+    },
+    {
+      "index": 3,
+      "question": "双链表相比单链表的主要优势是？",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "break;\ncase ‘>’: // pa指数小于 pb指数\npc→link = pa ; pc = pa ;\npa = Aiter.Next ( );\n}\nif ( Aiter.NotNull ( ) ) pc→link = pa;\ne",
+      "response": "ANSWER: C\nREASON: 双向链表是指在前驱和后继方向都能游历的线性链表。"
+    },
+    {
+      "index": 4,
+      "question": "循环队列中，判断队满的条件是？",
+      "expected": "C",
+      "actual": "C",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "{front = rear = 0; }队列的数组表示队列的数组表示\n⎯⎯循环队列的类定义循环队列的类定义\nintIsEmpty ( )const\n{ return front == rear ;}\nintIsFull ( )const\n{",
+      "response": "ANSWER: C\nREASON: 队满条件是 (rear + 1) % maxSize == front。"
+    },
+    {
+      "index": 5,
+      "question": "用栈实现递归的本质是？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "); str1= 0;\n//str1全部传送给 hstr1\nreturn 1;\n}\n}\n设str= ‘( ( 2, ( ‘b’, 7 ) ), ( ), ( ‘d’)  ) ’\n得到的广义表链表结构\n小结小结需要复习的知识点需要复习的知识点",
+      "response": "ANSWER: B\nREASON: 递归过程在实现时，需要自己调用自己，每一次递归调用时，需要为过程中使用的参数、局部变量等另外分配存储空间。"
+    },
+    {
+      "index": 6,
+      "question": "表达式求值中，中缀转后缀主要利用？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "+ 3 * 11 + 2 * 36 + 4 * 43 * 10 + 3 * 11 + 2 * 36 + 4 * 4\n= 257= 257\n【【例例55】】下面是对二叉树进行中序遍历的下面是对二叉树进行中序遍历的\n递归算法。递归算法。\ntem",
+      "response": "ANSWER: B\nREASON: 根据资料，中缀转后缀表达式主要利用栈来实现。"
+    },
+    {
+      "index": 7,
+      "question": "递归算法必须具备？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "归的算法，其递归树如\n图所示。图所示。\n算法算法 partitionpartition利用序列第一个对象作为基准，利用序列第一个对象作为基准，\n将整个序列划分为左右两个子序列。算法中执将整个序列划分为左右两个子序列。算法中执\n行了一个循",
+      "response": "ANSWER: B\nREASON: 递归算法需要有终止条件以防止无限递归。"
+    },
+    {
+      "index": 8,
+      "question": "广义表 (a,(b,c)) 的深度为？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "BB((aa, , bb), ), CC((uu, (, (xx, , yy, , zz)), )), AA( ) ) )( ) ) )\nintGenList :: depth ( GenListNode *ls ) {\nif (ls→tl",
+      "response": "ANSWER: B\nREASON: 根据材料中的递归算法分析，广义表 (a, (b, c)) 的深度为 1 + Max{Depth(a), Depth((b, c))} = 1 + 1 = 2。"
+    },
+    {
+      "index": 9,
+      "question": "一棵有 n 个节点的二叉树，其空指针域个数为？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "[Slide 116]\n问题是有 n 个数据值，可能构造多少种不同的二叉树？我们可以固定前序排列，选择所有可能的中序排列。\n如果前序序列固定不变，给出不同的中序序列，可得到不同的二叉树。\n\n[Slide 117]\n有0个, 1个,\n例如，有",
+      "response": "ANSWER: B\nREASON: 二叉树的空指针域个数为 n+1。"
+    },
+    {
+      "index": 10,
+      "question": "已知二叉树前序和中序遍历，能否唯一确定一棵树？",
+      "expected": "B",
+      "actual": "B",
+      "correct": true,
+      "retrieved_count": 5,
+      "top_chunk_preview": "知一棵二叉树的前序遍\n已知一棵二叉树的前序遍\n历的结果序列是\nABECDFGHIJ\n中序遍历的结果序列是\nEBCDAFHIGJ\n试画出这棵二叉树。\n137 | 【解答 | 18 | 103 | 【解答\n解答】前序序列\n前序序列ABECDFG",
+      "response": "ANSWER: B\nREASON: 由二叉树的前序序列和中序序列可唯一地确定一棵二叉树。"
+    }
+  ]
+}
